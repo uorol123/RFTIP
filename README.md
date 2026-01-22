@@ -57,42 +57,29 @@ CREATE TABLE user_login_logs (
 ### 3.2 数据文件表
 
 ```sql
--- 用户数据文件表
+-- 数据文件表（数据只存一份，通过 file_id 关联）
 CREATE TABLE data_files (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL COMMENT '上传用户ID',
     file_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
     file_path VARCHAR(500) NOT NULL COMMENT '存储路径(MinIO)',
-    file_type ENUM('csv', 'xlsx', 'excel') DEFAULT 'csv' COMMENT '文件类型',
     data_type ENUM('track', 'radar') NOT NULL COMMENT '数据类型：track=飞行轨迹，radar=雷达站',
-    is_public BOOLEAN DEFAULT FALSE COMMENT '是否公开（其他用户可查看）',
+    is_public BOOLEAN DEFAULT FALSE COMMENT '是否公开（其他用户可查看引用）',
     upload_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '上传时间',
     description VARCHAR(500) COMMENT '文件描述',
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) COMMENT '用户数据文件表';
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE INDEX idx_user_file (user_id, file_name)  -- 同一用户文件不重复
+) COMMENT '数据文件表';
 ```
 
-### 3.3 雷达站与轨迹数据表
+### 3.3 轨迹数据表（通过 file_id 关联）
 
 ```sql
--- 雷达站信息表
-CREATE TABLE radar_stations (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    file_id BIGINT NOT NULL COMMENT '来源文件ID',
-    station_id VARCHAR(50) NOT NULL COMMENT '站号（雷达站唯一标识）',
-    longitude DECIMAL(10, 7) NOT NULL COMMENT '经度',
-    latitude DECIMAL(10, 7) NOT NULL COMMENT '纬度',
-    altitude FLOAT COMMENT '雷达站高度（米）',
-    description VARCHAR(255) COMMENT '备注说明',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (file_id) REFERENCES data_files(id) ON DELETE CASCADE
-) COMMENT '雷达站信息表';
-
 -- 原始飞行轨迹表
 CREATE TABLE flight_tracks_raw (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    file_id BIGINT NOT NULL COMMENT '来源文件ID',
-    batch_id VARCHAR(50) NOT NULL COMMENT '飞机批号（同一架飞机的唯一标识）',
+    file_id BIGINT NOT NULL COMMENT '来源文件ID（数据不重复存储）',
+    batch_id VARCHAR(50) NOT NULL COMMENT '飞机批号（原始值，显示时加用户前缀区分）',
     station_id VARCHAR(50) COMMENT '雷达站号',
     time_stamp DATETIME(6) NOT NULL COMMENT '观测时间',
     longitude DECIMAL(10, 7) COMMENT '经度',
@@ -101,8 +88,8 @@ CREATE TABLE flight_tracks_raw (
     speed FLOAT COMMENT '速度（m/s，可选）',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (file_id) REFERENCES data_files(id) ON DELETE CASCADE,
-    INDEX idx_batch (batch_id),
-    INDEX idx_time (time_stamp)
+    INDEX idx_file (file_id),
+    INDEX idx_batch_time (batch_id, time_stamp)
 ) COMMENT '原始飞行轨迹表';
 
 -- 修正后飞行轨迹表（算法处理结果）
@@ -115,12 +102,29 @@ CREATE TABLE flight_tracks_corrected (
     altitude FLOAT COMMENT '修正后高度（米）',
     speed FLOAT COMMENT '修正后速度（m/s）',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_batch (batch_id),
-    INDEX idx_time (time_stamp)
+    INDEX idx_batch_time (batch_id, time_stamp)
 ) COMMENT '修正后飞行轨迹表';
 ```
 
-### 3.4 禁飞区表
+### 3.4 雷达站数据表（通过 file_id 关联）
+
+```sql
+-- 雷达站信息表
+CREATE TABLE radar_stations (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    file_id BIGINT NOT NULL COMMENT '来源文件ID',
+    station_id VARCHAR(50) NOT NULL COMMENT '站号（原始值）',
+    longitude DECIMAL(10, 7) NOT NULL COMMENT '经度',
+    latitude DECIMAL(10, 7) NOT NULL COMMENT '纬度',
+    altitude FLOAT COMMENT '雷达站高度（米）',
+    description VARCHAR(255) COMMENT '备注说明',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (file_id) REFERENCES data_files(id) ON DELETE CASCADE,
+    INDEX idx_file (file_id)
+) COMMENT '雷达站信息表';
+```
+
+### 3.5 禁飞区表
 
 ```sql
 -- 用户自定义禁飞区表
@@ -161,9 +165,83 @@ CREATE TABLE zone_intrusions (
 
 ---
 
-## 4. 核心功能模块
+## 4. 数据权限与隔离
 
-### 4.1 轨迹处理与场景自适应算法
+### 4.1 数据归属原则
+
+* **数据只存一份：** 轨迹和雷达站数据通过 `file_id` 关联到 `data_files` 表，不直接存储 `user_id`
+* **用户只能操作自己的文件：** `data_files.user_id` 标识文件归属
+* **文件可选择公开：** `is_public = TRUE` 时，其他用户可以查看和引用该文件
+
+### 4.2 数据查询权限
+
+```sql
+-- 查询我能访问的轨迹数据（自己的私有文件 + 公开文件）
+SELECT t.*
+FROM flight_tracks_raw t
+JOIN data_files f ON t.file_id = f.id
+WHERE f.user_id = ?        -- 我的私有文件
+   OR f.is_public = TRUE;  -- 公开文件
+
+-- 查询我能访问的雷达站数据（同样逻辑）
+SELECT r.*
+FROM radar_stations r
+JOIN data_files f ON r.file_id = f.id
+WHERE f.user_id = ? OR f.is_public = TRUE;
+```
+
+### 4.3 标识符区分（解决用户间批号/站号重复问题）
+
+* **存储：** 保留原始 `batch_id` 和 `station_id`
+* **显示：** 前端拼接用户标识前缀，如 `"UserA_B123"` 或 `"UserB_B123"`
+* **筛选：** 使用原始值 + 权限过滤
+
+```javascript
+// 前端显示示例
+function displayBatchId(batchId, ownerUserId) {
+    return `${ownerUserId}_${batchId}`;  // "1001_ABC123"
+}
+
+// API 查询示例
+async function queryTracks(batchId, currentUserId) {
+    return await db.fetchAll(`
+        SELECT t.* FROM flight_tracks_raw t
+        JOIN data_files f ON t.file_id = f.id
+        WHERE t.batch_id = ? AND (f.user_id = ? OR f.is_public = TRUE)
+    `, [batchId, currentUserId]);
+}
+```
+
+### 4.4 禁飞区预警逻辑
+
+```python
+async def check_zone_intrusions(user_id: int, batch_id: str):
+    # 1. 获取该用户的所有禁飞区
+    zones = await db.fetch_all(
+        "SELECT * FROM restricted_zones WHERE user_id = ?", (user_id,)
+    )
+
+    # 2. 获取该用户能访问的轨迹（自己的 + 公开的）
+    tracks = await db.fetch_all("""
+        SELECT t.* FROM flight_tracks_raw t
+        JOIN data_files f ON t.file_id = f.id
+        WHERE t.batch_id = ? AND (f.user_id = ? OR f.is_public = TRUE)
+    """, (batch_id, user_id))
+
+    # 3. 匹配禁飞区并记录入侵
+    for track in tracks:
+        for zone in zones:
+            if point_in_zone(track.lon, track.lat, zone):
+                await record_intrusion(zone.id, batch_id, track)
+                if zone.alert_email:
+                    await send_alert_email(user_id, zone, track)
+```
+
+---
+
+## 5. 核心功能模块
+
+### 5.1 轨迹处理与场景自适应算法
 
 系统支持用户根据实际工况预设两种分析场景：
 
@@ -177,20 +255,18 @@ CREATE TABLE zone_intrusions (
 * **原理：** 采用 **卡尔曼滤波 (Kalman Filter)**。基于物理运动模型（匀速/匀加速）对单站噪声数据进行预测与修正。
 * **目的：** 获得平滑连续的飞行轨迹，消除雷达跳变点。
 
----
-
-### 4.2 飞行轨迹 AI 分析（MCP 模式）
+### 5.2 飞行轨迹 AI 分析（MCP 模式）
 
 系统通过 MCP Server 获取空间上下文，结合大模型生成分析报告。
 
-#### 4.2.1 整体轨迹分析
+#### 5.2.1 整体轨迹分析
 
 1. 用户选择一架飞机的完整轨迹
 2. MCP 工具提取轨迹特征（起飞点、降落点、转弯点、巡航高度、总里程等）
 3. 将特征数据发送给大模型
 4. 大模型生成整体分析报告（飞行意图、轨迹质量评估、异常检测等）
 
-#### 4.2.2 区间轨迹分析
+#### 5.2.2 区间轨迹分析
 
 1. 用户选择一架飞机 + 时间区间
 2. MCP 工具分析该区间的：
@@ -200,7 +276,7 @@ CREATE TABLE zone_intrusions (
    - 航向变化
 3. 大模型输出该时段的飞行状态描述
 
-#### 4.2.3 禁飞区预警
+#### 5.2.3 禁飞区预警
 
 1. 用户自定义禁飞区（圆形/多边形，可设置高度限制）
 2. 当飞机进入禁飞区时：
@@ -209,9 +285,7 @@ CREATE TABLE zone_intrusions (
    - 结合大模型分析入侵情况
    - 发送邮件通知用户
 
----
-
-### 4.3 三维数字孪生可视化
+### 5.3 三维数字孪生可视化
 
 * **多维轨迹对比：** 动态同屏对比"原始噪声轨迹（红线）"与"算法优化轨迹（绿线）"
 * **高度感应墙：** 轨迹线下方的垂直投影墙，直观展示飞机高度变化
@@ -220,41 +294,41 @@ CREATE TABLE zone_intrusions (
 
 ---
 
-## 5. 用户权限与数据管理
+## 6. 用户权限与数据管理
 
-### 5.1 数据归属
+### 6.1 数据归属
 
 | 数据类型 | 归属 | 共享方式 |
 | --- | --- | --- |
-| 用户信息 | 用户本人 | 私有 |
-| 上传文件（雷达站/轨迹） | 上传用户 | 可设为公开或私有 |
-| 修正轨迹 | 系统生成 | 随原始数据归属 |
-| 禁飞区设置 | 用户本人 | 私有 |
-| 入侵记录 | 用户本人 | 私有 |
+| data_files（文件记录） | 上传用户 | 可设为公开 |
+| flight_tracks_raw（轨迹数据） | 通过 file_id 关联 | 随文件公开性 |
+| radar_stations（雷达站数据） | 通过 file_id 关联 | 随文件公开性 |
+| restricted_zones（禁飞区） | 用户本人 | 私有 |
+| zone_intrusions（入侵记录） | 用户本人 | 私有 |
 
-### 5.2 权限控制
+### 6.2 权限控制
 
-* **私有数据：** 仅自己可访问、操作
-* **公开数据：** 其他用户可查看，但不可修改或删除
-* **文件共享：** 用户可随时切换文件的公开/私有状态
+* **私有文件：** 仅自己可访问
+* **公开文件：** 其他用户可查看和引用，但不可删除
+* **禁飞区：** 仅自己可管理，预警也只通知自己
 
 ---
 
-## 6. 业务流程图
+## 7. 业务流程图
 
 ```
 用户注册/登录
       │
       ▼
 ┌─────────────────┐
-│  上传数据文件    │ -> CSV/Excel 格式
-│  (轨迹/雷达站)   │
+│  上传数据文件    │ -> CSV/Excel 格式（轨迹或雷达站）
+│  (is_public可选) │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐     ┌─────────────────┐
 │  数据解析入库    │ ->  │  选择处理场景   │
-│  (原始轨迹表)    │     │  (多源/单源)    │
+│  (file_id关联)   │     │  (多源/单源)    │
 └────────┬────────┘     └────────┬────────┘
          │                       │
          ▼                       ▼
@@ -272,9 +346,9 @@ CREATE TABLE zone_intrusions (
 
 ---
 
-## 7. 数据文件格式说明
+## 8. 数据文件格式说明
 
-### 7.1 轨迹数据文件（CSV/Excel）
+### 8.1 轨迹数据文件（CSV/Excel）
 
 | 列名 | 必填 | 说明 |
 | --- | --- | --- |
@@ -286,7 +360,7 @@ CREATE TABLE zone_intrusions (
 | altitude | 否 | 高度（米） |
 | speed | 否 | 速度（m/s） |
 
-### 7.2 雷达站数据文件（CSV/Excel）
+### 8.2 雷达站数据文件（CSV/Excel）
 
 | 列名 | 必填 | 说明 |
 | --- | --- | --- |
@@ -298,17 +372,17 @@ CREATE TABLE zone_intrusions (
 
 ---
 
-## 8. 项目创新点
+## 9. 项目创新点
 
 * **算法灵活性：** 区分"已知基准"与"未知基准"两种工程实际场景
 * **AI 分析深度：** 基于 MCP 工具增强地理语义，让大模型理解"飞机在哪里、在干什么"
 * **交互专业性：** 结合 Cesium 三维引擎，提供行业演示标准的 4D 可视化效果
 * **用户个性化：** 支持用户自定义禁飞区 + 邮件预警通知
-* **数据自主性：** 文件上传、共享/私有可控
+* **数据独立性：** 用户数据隔离，公开数据可引用但不冗余存储
 
 ---
 
-## 9. 技术参考
+## 10. 技术参考
 
 * **MCP Python SDK:** https://github.com/modelcontextprotocol/python-sdk
 * **Cesium.js:** https://cesium.com/cesiumjs/
