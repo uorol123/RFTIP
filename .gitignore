@@ -31,8 +31,9 @@ frontend/.vite/
 *~
 
 # Claude Code local settings
-.claude/settings.local.json
-frontend/.claude/settings.local.json
+.claude/
+backend/.claude/
+frontend/.claude/
 
 # Python cache (including subdirectories)
 **/__pycache__/

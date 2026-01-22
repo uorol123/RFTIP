@@ -25,11 +25,30 @@
 
 ```
 backend/
-├── main.py              # FastAPI 应用入口
-├── database.py          # 数据库连接配置
-├── .env                 # 环境变量配置
-├── venv/                # Python 虚拟环境
-└── README.md            # 本文档
+├── app/                          # Main application package
+│   ├── __init__.py
+│   ├── models/                   # SQLAlchemy models
+│   │   └── __init__.py
+│   ├── routers/                  # API endpoints (FastAPI routers)
+│   │   ├── __init__.py
+│   │   ├── auth.py              # Authentication endpoints
+│   │   └── health.py            # Health check endpoints
+│   ├── schemas/                  # Pydantic models for request/response
+│   │   └── __init__.py
+│   └── services/                 # Business logic
+│       └── __init__.py
+├── core/                         # Core configuration and utilities
+│   ├── __init__.py
+│   ├── config.py                # Pydantic settings
+│   └── database.py              # Database session and engine
+├── migrations/                   # Alembic migration files
+├── tests/                        # Test files
+├── .env                         # Environment variables (not committed)
+├── .env.example                 # Example environment variables
+├── alembic.ini                  # Alembic configuration
+├── main.py                      # Application entry point
+├── requirements.txt             # Python dependencies
+└── README.md                    # 本文档
 ```
 
 ---
@@ -102,7 +121,7 @@ source venv/bin/activate
 4. **安装依赖**
 
 ```bash
-pip install fastapi uvicorn sqlalchemy pymysql pyjwt python-multipart
+pip install -r requirements.txt
 ```
 
 ### 数据库配置
@@ -117,14 +136,18 @@ CREATE DATABASE rftip CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 3. **配置环境变量**
 
+复制环境变量模板并编辑：
+
+```bash
+cp .env.example .env
+```
+
 编辑 `.env` 文件：
 
 ```env
-DATABASE_URL=mysql+pymysql://用户名:密码@localhost:3306/rftip
-JWT_SECRET_KEY=your-secret-key-here
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=your-access-key
-MINIO_SECRET_KEY=your-secret-key
+DATABASE_URL=mysql+pymysql://username:password@localhost:3306/rftip_db
+SECRET_KEY=your-secure-random-secret-key
+DEBUG=True
 ```
 
 4. **初始化数据库表**
@@ -135,8 +158,22 @@ python main.py  # 首次启动会自动创建表
 
 ### 启动服务
 
+**开发模式：**
+
+```bash
+python main.py
+```
+
+或直接使用 uvicorn：
+
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**生产模式：**
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 服务将在 `http://localhost:8000` 启动
