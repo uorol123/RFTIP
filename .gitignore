@@ -1,0 +1,57 @@
+# Python / Backend
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.Python
+backend/*.so
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.DS_Store
+
+# Environment files (keep .env.example but ignore .env)
+backend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Node / Frontend (frontend folder has its own .gitignore)
+# These are just for safety
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code local settings
+.claude/settings.local.json
+frontend/.claude/settings.local.json
+
+# Python cache (including subdirectories)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/
+uploads/
