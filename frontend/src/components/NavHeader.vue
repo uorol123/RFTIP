@@ -1,7 +1,7 @@
 <template>
   <header class="nav-header">
     <div class="nav-container">
-      <div class="nav-brand">
+      <div class="nav-brand" @click="goToHome">
         <svg class="brand-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="24" cy="24" r="20" stroke="url(#grad1)" stroke-width="2"/>
           <circle cx="24" cy="24" r="14" stroke="url(#grad1)" stroke-width="1.5" stroke-opacity="0.6"/>
@@ -15,7 +15,10 @@
             </linearGradient>
           </defs>
         </svg>
-        <span class="brand-text">RFTIP</span>
+        <div class="brand-info">
+          <span class="brand-text">RFTIP</span>
+          <span class="brand-desc">雷达频率追踪与智能分析平台</span>
+        </div>
       </div>
       <nav class="nav-menu">
         <a href="#features" class="nav-link">功能特性</a>
@@ -35,6 +38,10 @@ import { useRouter } from 'vue-router'
 import ThemeSwitch from './ThemeSwitch.vue'
 
 const router = useRouter()
+
+function goToHome() {
+  router.push('/')
+}
 
 function goToLogin() {
   router.push('/login')
@@ -88,15 +95,30 @@ function goToRegister() {
 .brand-icon {
   width: 40px;
   height: 40px;
+  flex-shrink: 0;
+}
+
+.brand-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
 }
 
 .brand-text {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   font-weight: 700;
   background: var(--gradient-primary);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  line-height: 1.2;
+}
+
+.brand-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: 1.2;
 }
 
 .nav-menu {
