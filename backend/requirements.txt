@@ -1,50 +1,44 @@
 # FastAPI and web server
-fastapi==0.109.2
-uvicorn[standard]==0.27.1
+fastapi==0.115.0
+uvicorn[standard]==0.32.1
 
 # Database
-sqlalchemy==2.0.25
-pymysql==1.1.0
+sqlalchemy==2.0.36
+pymysql==1.1.1
 
 # Configuration
 python-dotenv==1.0.1
-pydantic==2.6.1
-pydantic-settings==2.2.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
 
 # Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
+python-multipart==0.0.12
 
-# CORS
-fastapi-cors==0.0.6
+# File uploads and processing
+aiofiles==24.1.0
 
-# File uploads
-aiofiles==23.2.1
-python-magic==0.4.27
+# Data processing and AI/ML
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.2
+filterpy==0.1.8
 
-# MinIO
-minio==7.2.7
+# MinIO (optional)
+minio==7.2.8
 
-# Optional: AI/ML libraries
-# numpy==1.26.4
-# pandas==2.2.0
-# scikit-learn==1.4.0
+# Background tasks (optional)
+celery==5.4.0
+redis==5.2.1
 
 # Development and testing
-pytest==7.4.4
-pytest-cov==4.1.0
-httpx==0.26.0
+pytest==8.3.4
+pytest-cov==6.0.0
+httpx==0.28.1
 
 # Code formatting and linting
-black==24.1.1
+black==24.10.0
 isort==5.13.2
-flake8==7.0.0
-mypy==1.8.0
-
-# Documentation generation
-# fastapi-cli==0.0.3
-
-# Background tasks and async
-celery==5.3.6
-redis==5.0.1
+flake8==7.1.1
+mypy==1.14.1
