@@ -1,11 +1,27 @@
 <template>
-  <div id="app">
+  <div id="app" :class="{ 'is-dark': isDark }">
     <router-view />
+    <Toast />
   </div>
 </template>
 
 <script setup lang="ts">
-// App 根组件
+import { computed, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useThemeStore } from '@/stores/theme'
+import { useAuthStore } from '@/stores/auth'
+import Toast from '@/components/Toast.vue'
+
+const themeStore = useThemeStore()
+const authStore = useAuthStore()
+
+const { isDark } = storeToRefs(themeStore)
+
+// Initialize theme from storage
+onMounted(() => {
+  themeStore.setTheme(localStorage.getItem('theme') === 'dark')
+  authStore.loadUserFromStorage()
+})
 </script>
 
 <style>
@@ -23,5 +39,9 @@ body {
 #app {
   width: 100%;
   min-height: 100vh;
+}
+
+#app.is-dark {
+  color-scheme: dark;
 }
 </style>

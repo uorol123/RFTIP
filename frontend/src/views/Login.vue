@@ -39,6 +39,7 @@
                 placeholder="请输入用户名"
                 required
                 autocomplete="username"
+                :disabled="loading"
               />
             </div>
           </div>
@@ -57,23 +58,27 @@
                 placeholder="请输入密码"
                 required
                 autocomplete="current-password"
+                :disabled="loading"
               />
             </div>
           </div>
 
           <div class="form-options">
             <label class="checkbox-wrapper">
-              <input type="checkbox" />
+              <input type="checkbox" v-model="form.remember" />
               <span>记住我</span>
             </label>
             <a href="#" class="forgot-link">忘记密码?</a>
           </div>
 
-          <button type="submit" class="submit-btn">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button type="submit" class="submit-btn" :disabled="loading">
+            <svg v-if="!loading" class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4m-5 4l-4-4m0 0l4-4m-4 4h14"/>
             </svg>
-            登录
+            <svg v-else class="btn-icon spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            {{ loading ? '登录中...' : '登录' }}
           </button>
         </form>
 
@@ -86,24 +91,49 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { reactive, ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
+import { authApi } from '@/api'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
+const appStore = useAppStore()
+
+const loading = ref(false)
 
 const form = reactive({
   username: '',
   password: '',
+  remember: false,
 })
 
 async function handleLogin() {
-  // TODO: 调用后端登录接口
-  console.log('Login:', form.username, form.password)
+  loading.value = true
 
-  // 暂时跳转到 dashboard
-  router.push('/dashboard')
+  try {
+    const response = await authApi.login({
+      username: form.username,
+      password: form.password,
+    })
+
+    // Store auth data
+    authStore.setToken(response.access_token)
+    authStore.setUser(response.user)
+
+    // Show success message
+    appStore.success('登录成功！')
+
+    // Redirect to dashboard or return URL
+    const redirect = (route.query.redirect as string) || '/dashboard'
+    router.push(redirect)
+  } catch (error: any) {
+    appStore.error(error.message || '登录失败，请检查用户名和密码')
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -233,6 +263,11 @@ async function handleLogin() {
   transition: all 0.2s ease;
 }
 
+.form-group input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .form-group input::placeholder {
   color: var(--text-muted);
 }
@@ -243,7 +278,7 @@ async function handleLogin() {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.form-group input:hover:not(:focus) {
+.form-group input:hover:not(:focus):not(:disabled) {
   border-color: var(--border-hover);
 }
 
@@ -266,6 +301,7 @@ async function handleLogin() {
   width: 16px;
   height: 16px;
   accent-color: var(--color-primary);
+  cursor: pointer;
 }
 
 .forgot-link {
@@ -297,14 +333,33 @@ async function handleLogin() {
   box-shadow: var(--shadow-md);
 }
 
-.submit-btn:hover {
+.submit-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-icon {
   width: 18px;
   height: 18px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .login-footer {

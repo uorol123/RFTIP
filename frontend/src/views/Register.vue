@@ -39,6 +39,9 @@
                   placeholder="Enter username"
                   required
                   autocomplete="username"
+                  :disabled="loading"
+                  minlength="3"
+                  maxlength="50"
                 />
               </div>
             </div>
@@ -55,9 +58,29 @@
                   placeholder="Enter email"
                   required
                   autocomplete="email"
+                  :disabled="loading"
                 />
               </div>
             </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fullName">Full Name (Optional)</label>
+              <div class="input-wrapper">
+                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                </svg>
+                <input
+                  id="fullName"
+                  v-model="form.full_name"
+                  type="text"
+                  placeholder="Enter full name"
+                  autocomplete="name"
+                  :disabled="loading"
+                />
+              </div>
+            </div>
+            <div class="form-group"></div>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -74,6 +97,8 @@
                   placeholder="Enter password"
                   required
                   autocomplete="new-password"
+                  :disabled="loading"
+                  minlength="8"
                 />
               </div>
             </div>
@@ -90,21 +115,25 @@
                   placeholder="Enter password again"
                   required
                   autocomplete="new-password"
+                  :disabled="loading"
                 />
               </div>
             </div>
           </div>
           <div class="form-options">
             <label class="checkbox-wrapper">
-              <input type="checkbox" required />
+              <input type="checkbox" v-model="form.agreeToTerms" required />
               <span>I agree to <a href="#" class="terms-link">Terms of Service</a> and <a href="#" class="terms-link">Privacy Policy</a></span>
             </label>
           </div>
-          <button type="submit" class="submit-btn">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button type="submit" class="submit-btn" :disabled="loading">
+            <svg v-if="!loading" class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
             </svg>
-            Create Account
+            <svg v-else class="btn-icon spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            {{ loading ? 'Creating Account...' : 'Create Account' }}
           </button>
         </form>
         <div class="register-footer">
@@ -116,25 +145,68 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
+import { authApi } from '@/api'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const appStore = useAppStore()
+
+const loading = ref(false)
 
 const form = reactive({
   username: '',
   email: '',
+  full_name: '',
   password: '',
   confirmPassword: '',
+  agreeToTerms: false,
 })
 
 async function handleRegister() {
+  // Password validation
   if (form.password !== form.confirmPassword) {
-    alert('Passwords do not match')
+    appStore.error('Passwords do not match')
     return
   }
-  console.log('Register:', form.username, form.email)
-  router.push('/login')
+
+  if (form.password.length < 8) {
+    appStore.error('Password must be at least 8 characters')
+    return
+  }
+
+  if (!form.agreeToTerms) {
+    appStore.error('Please agree to the Terms of Service')
+    return
+  }
+
+  loading.value = true
+
+  try {
+    const response = await authApi.register({
+      username: form.username,
+      email: form.email,
+      password: form.password,
+      full_name: form.full_name || undefined,
+    })
+
+    // Store auth data (auto-login after registration)
+    authStore.setToken(response.access_token)
+    authStore.setUser(response.user)
+
+    // Show success message
+    appStore.success('注册成功！Welcome to RFTIP!')
+
+    // Redirect to dashboard
+    router.push('/dashboard')
+  } catch (error: any) {
+    appStore.error(error.message || 'Registration failed. Please try again.')
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -275,6 +347,11 @@ async function handleRegister() {
   transition: all 0.2s ease;
 }
 
+.form-group input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .form-group input::placeholder {
   color: var(--text-muted);
 }
@@ -285,7 +362,7 @@ async function handleRegister() {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.form-group input:hover:not(:focus) {
+.form-group input:hover:not(:focus):not(:disabled) {
   border-color: var(--border-hover);
 }
 
@@ -310,6 +387,7 @@ async function handleRegister() {
   accent-color: var(--color-primary);
   margin-top: 0.125rem;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .terms-link {
@@ -341,14 +419,33 @@ async function handleRegister() {
   box-shadow: var(--shadow-md);
 }
 
-.submit-btn:hover {
+.submit-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-icon {
   width: 18px;
   height: 18px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .register-footer {

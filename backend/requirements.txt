@@ -23,7 +23,7 @@ aiofiles==24.1.0
 numpy==1.26.4
 pandas==2.2.3
 scikit-learn==1.5.2
-filterpy==0.1.8
+filterpy==1.4.5
 
 # MinIO (optional)
 minio==7.2.8

@@ -2,7 +2,7 @@
 用户相关数据模型
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from core.database import Base
 
@@ -35,7 +35,7 @@ class UserLoginLog(Base):
     __tablename__ = "user_login_logs"
 
     id = Column(Integer, primary_key=True, index=True, comment="日志ID")
-    user_id = Column(Integer, nullable=False, index=True, comment="用户ID")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="用户ID")
     login_time = Column(DateTime, default=datetime.utcnow, comment="登录时间")
     logout_time = Column(DateTime, comment="登出时间")
     ip_address = Column(String(50), comment="IP地址")
