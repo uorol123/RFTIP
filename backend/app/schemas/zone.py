@@ -2,8 +2,9 @@
 禁飞区相关的 Pydantic 模型
 """
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Optional, Any
+from pydantic import BaseModel, Field, computed_field
+import json
 
 
 class ZoneCoordinates(BaseModel):
@@ -49,6 +50,43 @@ class RestrictedZoneResponse(RestrictedZoneBase):
     user_id: int
     created_at: datetime
     updated_at: datetime
+
+    # 前端兼容字段
+    @computed_field
+    @property
+    def name(self) -> str:
+        return self.zone_name
+
+    @computed_field
+    @property
+    def coordinates_array(self) -> list[list[float]]:
+        """将 JSON 字符串转换为坐标数组"""
+        try:
+            # 使用 BaseModel 的方式获取原始 coordinates 值
+            coords_str = RestrictedZoneBase.model_dump(self)["coordinates"]
+            coords = json.loads(coords_str)
+            if coords.get("type") == "circle":
+                center = coords.get("center", {})
+                return [[center.get("lng", 0), center.get("lat", 0)]]
+            elif coords.get("type") == "polygon":
+                vertices = coords.get("vertices", [])
+                return [[v.get("lng", 0), v.get("lat", 0)] for v in vertices]
+        except (json.JSONDecodeError, TypeError, AttributeError, KeyError):
+            pass
+        return []
+
+    @computed_field
+    @property
+    def email_alerts(self) -> bool:
+        return self.notification_enabled
+
+    @computed_field
+    @property
+    def alert_emails(self) -> list[str]:
+        """解析邮箱列表"""
+        if self.notification_email:
+            return [e.strip() for e in self.notification_email.split(",") if e.strip()]
+        return []
 
     class Config:
         from_attributes = True

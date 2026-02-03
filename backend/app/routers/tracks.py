@@ -14,6 +14,9 @@ from app.schemas.track import (
     RawTrackResponse,
     CorrectedTrackResponse,
     TrackQueryParams,
+    TrackDetailResponse,
+    TrackPointsResponse,
+    TaskStatusResponse,
 )
 from app.services import track_service
 
@@ -128,3 +131,87 @@ async def get_track_summary(
             "outlier_count": sum(1 for t in corrected_tracks if t.is_outlier),
         }
     }
+
+
+@router.get("/{track_id}", response_model=TrackDetailResponse)
+async def get_track_detail(
+    track_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    获取单个轨迹详情
+    """
+    # 获取原始轨迹点
+    raw_tracks = track_service.get_raw_tracks(db, None, track_id, None, None, limit=10000)
+    corrected_tracks = track_service.get_corrected_tracks(db, None, track_id, None, None, limit=10000)
+
+    if not raw_tracks and not corrected_tracks:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未找到轨迹数据",
+        )
+
+    # 获取轨迹时间范围
+    all_tracks = corrected_tracks if corrected_tracks else raw_tracks
+    start_time = all_tracks[0].timestamp
+    end_time = all_tracks[-1].timestamp
+    duration_seconds = (end_time - start_time).total_seconds()
+
+    return TrackDetailResponse(
+        track_id=track_id,
+        file_id=raw_tracks[0].file_id if raw_tracks else corrected_tracks[0].file_id,
+        point_count=len(corrected_tracks) if corrected_tracks else len(raw_tracks),
+        start_time=start_time,
+        end_time=end_time,
+        duration_seconds=duration_seconds,
+        raw_points=[RawTrackResponse.model_validate(t) for t in raw_tracks],
+        corrected_points=[CorrectedTrackResponse.model_validate(t) for t in corrected_tracks],
+    )
+
+
+@router.get("/points", response_model=TrackPointsResponse)
+async def get_track_points(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    track_id: str | None = None,
+    file_id: int | None = None,
+    limit: int = 1000,
+):
+    """
+    获取轨迹点数据
+    """
+    tracks = track_service.get_corrected_tracks(db, file_id, track_id, None, None, limit=limit)
+
+    return TrackPointsResponse(
+        track_id=track_id or (tracks[0].track_id if tracks else ""),
+        points=[CorrectedTrackResponse.model_validate(t) for t in tracks],
+        total_count=len(tracks),
+    )
+
+
+@router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
+async def get_track_task_status(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+):
+    """
+    查询轨迹处理任务状态
+    """
+    from datetime import datetime
+
+    # 简化实现：返回模拟状态
+    # 实际应该从任务队列（如 Celery）获取状态
+    return TaskStatusResponse(
+        task_id=task_id,
+        status="completed",
+        progress=100.0,
+        message="轨迹处理完成",
+        result={
+            "total_points": 0,
+            "corrected_points": 0,
+            "outliers_detected": 0,
+        },
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )

@@ -3,7 +3,7 @@
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, computed_field
 
 
 class UserBase(BaseModel):
@@ -32,6 +32,12 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = Field(None, max_length=500, description="头像URL")
 
 
+class ChangePasswordRequest(BaseModel):
+    """修改密码请求模型"""
+    old_password: str = Field(..., min_length=6, description="旧密码")
+    new_password: str = Field(..., min_length=6, description="新密码")
+
+
 class UserResponse(UserBase):
     """用户响应模型"""
     id: int
@@ -40,6 +46,17 @@ class UserResponse(UserBase):
     avatar_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    # 前端兼容字段
+    @computed_field
+    @property
+    def is_admin(self) -> bool:
+        return self.is_superuser
+
+    @computed_field
+    @property
+    def avatar(self) -> Optional[str]:
+        return self.avatar_url
 
     class Config:
         from_attributes = True

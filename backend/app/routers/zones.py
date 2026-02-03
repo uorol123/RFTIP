@@ -155,3 +155,51 @@ async def list_intrusions(
         total=len(intrusions),
         intrusions=[ZoneIntrusionResponse.model_validate(i) for i in intrusions]
     )
+
+
+@router.patch("/{zone_id}", response_model=RestrictedZoneResponse)
+async def toggle_zone_active(
+    zone_id: int,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    切换禁飞区激活状态
+    """
+    zone = zone_service.get_zone_by_id(db, zone_id, current_user.id)
+    if not zone:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="禁飞区不存在",
+        )
+
+    # 切换激活状态
+    zone.is_active = not zone.is_active
+    db.commit()
+    db.refresh(zone)
+
+    return RestrictedZoneResponse.model_validate(zone)
+
+
+@router.patch("/{zone_id}/toggle", response_model=RestrictedZoneResponse)
+async def toggle_zone_active_v2(
+    zone_id: int,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    切换禁飞区激活状态（兼容前端 /toggle 路径）
+    """
+    zone = zone_service.get_zone_by_id(db, zone_id, current_user.id)
+    if not zone:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="禁飞区不存在",
+        )
+
+    # 切换激活状态
+    zone.is_active = not zone.is_active
+    db.commit()
+    db.refresh(zone)
+
+    return RestrictedZoneResponse.model_validate(zone)

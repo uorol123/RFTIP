@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from core.config import get_settings
 from core.database import get_db
-from app.schemas.auth import UserCreate, UserResponse, Token, UserUpdate, LoginLogResponse
+from app.schemas.auth import UserCreate, UserResponse, Token, UserUpdate, LoginLogResponse, ChangePasswordRequest
 from app.services import (
     create_user,
     authenticate_user,
@@ -234,3 +234,38 @@ async def get_logs(
     """
     logs = get_user_login_logs(db, current_user.id, limit=min(limit, 100))
     return [LoginLogResponse.model_validate(log) for log in logs]
+
+
+@router.post("/change-password")
+async def change_password(
+    password_data: ChangePasswordRequest,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    修改当前用户密码
+
+    - **old_password**: 旧密码
+    - **new_password**: 新密码（至少6字符）
+    """
+    from app.services import verify_password, get_password_hash
+
+    # 验证旧密码
+    db_user = get_user_by_id(db, current_user.id)
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在",
+        )
+
+    if not verify_password(password_data.old_password, db_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="旧密码错误",
+        )
+
+    # 更新密码
+    db_user.hashed_password = get_password_hash(password_data.new_password)
+    db.commit()
+
+    return {"message": "密码修改成功"}

@@ -17,9 +17,11 @@ export interface User {
   username: string
   email: string
   full_name?: string
-  avatar?: string
+  avatar_url?: string  // 后端原始字段名
+  avatar?: string  // 前端兼容字段
   is_active: boolean
-  is_admin: boolean
+  is_superuser: boolean  // 后端原始字段名
+  is_admin: boolean  // 前端兼容字段
   created_at: string
   updated_at: string
 }
@@ -54,8 +56,9 @@ export interface LoginLog {
 // File Types
 export interface DataFile {
   id: number
-  filename: string
-  original_filename: string
+  file_name: string  // 后端原始字段名
+  filename: string  // 前端兼容字段
+  original_filename: string  // 前端兼容字段（与 filename 相同）
   file_size: number
   file_type: string
   status: 'pending' | 'processing' | 'completed' | 'failed'
@@ -63,9 +66,11 @@ export interface DataFile {
   upload_time: string
   processed_time?: string
   error_message?: string
-  owner_id: number
+  user_id: number  // 后端原始字段名
+  owner_id: number  // 前端兼容字段
   owner_name?: string
-  record_count?: number
+  row_count?: number  // 后端原始字段名
+  record_count?: number  // 前端兼容字段
 }
 
 export interface FileUploadResponse {
@@ -140,14 +145,18 @@ export interface TrackProcessResponse {
 // Zone Types
 export interface NoFlyZone {
   id: number
-  name: string
+  zone_name: string  // 后端原始字段名
+  name: string  // 前端兼容字段
   zone_type: 'circle' | 'polygon'
-  coordinates: number[][]
+  coordinates: string  // 后端原始字段（JSON 字符串）
+  coordinates_array: number[][]  // 前端兼容字段（解析后的坐标数组）
   min_altitude: number
   max_altitude: number
   is_active: boolean
-  email_alerts: boolean
-  alert_emails?: string[]
+  notification_enabled: boolean  // 后端原始字段名
+  email_alerts: boolean  // 前端兼容字段
+  notification_email?: string  // 后端原始字段名
+  alert_emails?: string[]  // 前端兼容字段
   created_at: string
   updated_at: string
 }

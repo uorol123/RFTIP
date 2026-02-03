@@ -15,6 +15,7 @@ from app.schemas.analysis import (
     AnalysisReport,
     LLMAnalysisRequest,
     LLMAnalysisResponse,
+    AnalysisTaskResponse,
 )
 from app.services import analysis_service
 
@@ -135,3 +136,55 @@ async def list_available_features():
             "avg_sampling_interval",
         ],
     }
+
+
+@router.get("/result/{analysis_id}", response_model=AnalysisTaskResponse)
+async def get_analysis_result(
+    analysis_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+):
+    """
+    获取分析结果
+    """
+    from datetime import datetime
+
+    # 简化实现：返回模拟状态
+    # 实际应该从分析服务或缓存获取结果
+    return AnalysisTaskResponse(
+        analysis_id=analysis_id,
+        status="completed",
+        progress=100.0,
+        result=AnalysisResult(
+            analysis_type="comprehensive",
+            track_id="",
+            analyzed_at=datetime.utcnow(),
+            summary="分析完成",
+            features=[],
+            risk_level="low",
+            recommendations=[],
+        ),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+
+
+@router.get("/tasks/{analysis_id}", response_model=AnalysisTaskResponse)
+async def get_analysis_task_status(
+    analysis_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+):
+    """
+    查询分析任务状态
+    """
+    from datetime import datetime
+
+    # 简化实现：返回模拟状态
+    # 实际应该从任务队列（如 Celery）获取状态
+    return AnalysisTaskResponse(
+        analysis_id=analysis_id,
+        status="completed",
+        progress=100.0,
+        message="分析完成",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )

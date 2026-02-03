@@ -2,8 +2,8 @@
 轨迹相关的 Pydantic 模型
 """
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Optional, Any
+from pydantic import BaseModel, Field, computed_field
 
 
 class RadarStationBase(BaseModel):
@@ -115,3 +115,34 @@ class TrackQueryParams(BaseModel):
     radar_station_id: Optional[int] = Field(None, description="雷达站ID")
     limit: int = Field(100, ge=1, le=10000, description="返回数量限制")
     offset: int = Field(0, ge=0, description="偏移量")
+
+
+class TrackDetailResponse(BaseModel):
+    """轨迹详情响应模型"""
+    track_id: str
+    file_id: int
+    point_count: int
+    start_time: datetime
+    end_time: datetime
+    duration_seconds: float
+    raw_points: list[RawTrackResponse]
+    corrected_points: list[CorrectedTrackResponse]
+
+
+class TrackPointsResponse(BaseModel):
+    """轨迹点数据响应模型"""
+    track_id: str
+    points: list[CorrectedTrackResponse]
+    total_count: int
+
+
+class TaskStatusResponse(BaseModel):
+    """任务状态响应模型"""
+    task_id: str
+    status: str = Field(..., description="任务状态: pending/processing/completed/failed")
+    progress: float = Field(0.0, ge=0, le=100, description="任务进度（百分比）")
+    message: Optional[str] = None
+    result: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime

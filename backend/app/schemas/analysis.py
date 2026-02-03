@@ -2,7 +2,7 @@
 AI 分析相关的 Pydantic 模型
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -68,3 +68,14 @@ class LLMAnalysisResponse(BaseModel):
     model_used: str = Field(..., description="使用的模型")
     tokens_used: int = Field(..., description="使用的令牌数")
     processing_time: float = Field(..., description="处理时间（秒）")
+
+
+class AnalysisTaskResponse(BaseModel):
+    """分析任务响应模型"""
+    analysis_id: str
+    status: str = Field(..., description="任务状态: pending/processing/completed/failed")
+    progress: float = Field(0.0, ge=0, le=100, description="任务进度（百分比）")
+    result: Optional[AnalysisResult] = None
+    error: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime

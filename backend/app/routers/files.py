@@ -11,6 +11,8 @@ from app.schemas.file import (
     DataFileResponse,
     DataFileListResponse,
     FileUploadResponse,
+    DataFileUpdateVisibility,
+    FileStatusResponse,
 )
 from app.services import file_service
 
@@ -113,3 +115,62 @@ async def delete_file(
             detail="文件不存在或无权删除",
         )
     return None
+
+
+@router.put("/{file_id}", response_model=DataFileResponse)
+async def update_file_visibility(
+    file_id: int,
+    visibility_data: DataFileUpdateVisibility,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    更新文件可见性
+    """
+    db_file = file_service.get_file_by_id(file_id, db, current_user.id)
+    if not db_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="文件不存在或无权访问",
+        )
+
+    db_file.is_public = visibility_data.is_public
+    db.commit()
+    db.refresh(db_file)
+
+    return DataFileResponse.model_validate(db_file)
+
+
+@router.get("/{file_id}/status", response_model=FileStatusResponse)
+async def get_file_status(
+    file_id: int,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    获取文件处理状态
+    """
+    db_file = file_service.get_file_by_id(file_id, db, current_user.id)
+    if not db_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="文件不存在或无权访问",
+        )
+
+    # 计算处理进度
+    progress = 0.0
+    if db_file.status == "completed":
+        progress = 100.0
+    elif db_file.status == "processing":
+        progress = 50.0
+    elif db_file.status == "failed":
+        progress = 0.0
+
+    return FileStatusResponse(
+        file_id=db_file.id,
+        status=db_file.status,
+        progress=progress,
+        message=db_file.error_message if db_file.status == "failed" else None,
+        processed_rows=db_file.row_count if db_file.row_count else 0,
+        total_rows=db_file.row_count if db_file.row_count else 0,
+    )
