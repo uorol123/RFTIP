@@ -56,3 +56,8 @@ logs/
 *.sqlite3
 data/
 uploads/
+
+# Planning files (local development only)
+task_plan.md
+findings.md
+progress.md
