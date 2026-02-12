@@ -71,6 +71,7 @@ export const useAuthStore = defineStore(
       setToken,
       setUser,
       logout,
+      loadUserFromStorage,
       saveUserToStorage,
     }
   },

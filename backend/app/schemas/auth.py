@@ -17,6 +17,19 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """用户注册请求模型"""
     password: str = Field(..., min_length=6, max_length=50, description="密码")
+    verification_code: str = Field(..., min_length=6, max_length=6, description="邮箱验证码")
+
+
+class SendVerificationCodeRequest(BaseModel):
+    """发送验证码请求模型"""
+    email: EmailStr = Field(..., description="邮箱地址")
+
+
+class SendVerificationCodeResponse(BaseModel):
+    """发送验证码响应模型"""
+    message: str
+    email: str
+    expire_in: int  # 剩余秒数
 
 
 class UserLogin(BaseModel):

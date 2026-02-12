@@ -1,49 +1,62 @@
+/* Google Fonts Import */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
 /* CSS Variables for Theme Support */
 :root {
-  /* Light Theme Colors */
-  --bg-primary: #f8fafc;
+  /* Light Theme Colors - Modern Minimal */
+  --bg-primary: #fafbfc;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f1f5f9;
   --bg-elevated: #ffffff;
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --text-inverse: #ffffff;
 
   --border-color: #e2e8f0;
   --border-hover: #cbd5e1;
 
-  --color-primary: #3b82f6;
-  --color-primary-light: #60a5fa;
-  --color-primary-dark: #2563eb;
+  /* Modern gradient: deep blue to indigo */
+  --color-primary: #0284c7;
+  --color-primary-light: #38bdf8;
+  --color-primary-dark: #1d4ed8;
 
-  --color-accent: #10b981;
-  --color-accent-light: #34d399;
-  --color-accent-dark: #059669;
+  /* Teal accent */
+  --color-accent: #0d9488;
+  --color-accent-light: #2dd4bf;
+  --color-accent-dark: #0f766e;
+
+  /* Indigo for variety */
+  --color-indigo: #6366f1;
+  --color-indigo-light: #818cf8;
+  --color-indigo-dark: #4f46e5;
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
-  --gradient-subtle: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  --gradient-primary: linear-gradient(135deg, #0284c7 0%, #6366f1 100%);
+  --gradient-accent: linear-gradient(135deg, #0d9488 0%, #2dd4bf 100%);
+  --gradient-subtle: linear-gradient(180deg, #fafbfc 0%, #f1f5f9 100%);
+  --gradient-glow: radial-gradient(circle at center, rgba(45, 212, 191, 0.15) 0%, transparent 70%);
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
-  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1);
+  /* Shadows - softer for minimal look */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 25px 50px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 60px rgba(45, 212, 191, 0.25);
 
   /* Backdrop */
-  --backdrop-bg: rgba(255, 255, 255, 0.8);
-  --backdrop-border: rgba(226, 232, 240, 0.5);
+  --backdrop-bg: rgba(255, 255, 255, 0.85);
+  --backdrop-border: rgba(226, 232, 240, 0.6);
 
   /* Glass effect */
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.4);
 }
 
-/* Dark Theme */
+/* Dark Theme - Midnight Blue Aesthetic */
 :root.dark {
-  --bg-primary: #0f172a;
+  --bg-primary: #0c1222;
   --bg-secondary: #1e293b;
   --bg-tertiary: #1e293b;
   --bg-elevated: #1e293b;
@@ -53,34 +66,41 @@
   --text-muted: #64748b;
   --text-inverse: #ffffff;
 
-  --border-color: rgba(148, 163, 184, 0.15);
-  --border-hover: rgba(148, 163, 184, 0.3);
+  --border-color: rgba(148, 163, 184, 0.12);
+  --border-hover: rgba(148, 163, 184, 0.25);
 
-  --color-primary: #3b82f6;
-  --color-primary-light: #60a5fa;
-  --color-primary-dark: #2563eb;
+  --color-primary: #38bdf8;
+  --color-primary-light: #7dd3fc;
+  --color-primary-dark: #0ea5e9;
 
-  --color-accent: #10b981;
-  --color-accent-light: #34d399;
-  --color-accent-dark: #059669;
+  --color-accent: #2dd4bf;
+  --color-accent-light: #5eead4;
+  --color-accent-dark: #14b8a6;
+
+  --color-indigo: #818cf8;
+  --color-indigo-light: #a5b4fc;
+  --color-indigo-dark: #6366f1;
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
-  --gradient-subtle: linear-gradient(180deg, #0f172a 0%, #0a0f1a 100%);
+  --gradient-primary: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+  --gradient-accent: linear-gradient(135deg, #2dd4bf 0%, #5eead4 100%);
+  --gradient-subtle: linear-gradient(180deg, #0c1222 0%, #0f172a 100%);
+  --gradient-glow: radial-gradient(circle at center, rgba(45, 212, 191, 0.12) 0%, transparent 70%);
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.15);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.3);
-  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.35);
+  /* Shadows - enhanced for dark theme */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 25px 50px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 60px rgba(45, 212, 191, 0.2);
 
   /* Backdrop */
-  --backdrop-bg: rgba(15, 23, 42, 0.8);
+  --backdrop-bg: rgba(30, 41, 59, 0.85);
   --backdrop-border: rgba(148, 163, 184, 0.1);
 
   /* Glass effect */
   --glass-bg: rgba(30, 41, 59, 0.7);
-  --glass-border: rgba(148, 163, 184, 0.1);
+  --glass-border: rgba(148, 163, 184, 0.15);
 }
 
 /* Base styles */
@@ -101,20 +121,14 @@ body {
   min-height: 100vh;
   color: var(--text-primary);
   background: var(--bg-primary);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: background-color 0.4s ease, color 0.4s ease;
   line-height: 1.6;
   font-family:
-    Inter,
+    'Inter',
+    'Noto Sans SC',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
     sans-serif;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -142,7 +156,12 @@ input, textarea, select {
 /* Utility classes */
 .glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--glass-border);
+}
+
+/* Display font for headings */
+.font-display {
+  font-family: 'Space Grotesk', 'Noto Sans SC', sans-serif;
 }

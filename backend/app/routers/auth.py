@@ -8,7 +8,16 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from core.config import get_settings
 from core.database import get_db
-from app.schemas.auth import UserCreate, UserResponse, Token, UserUpdate, LoginLogResponse, ChangePasswordRequest
+from app.schemas.auth import (
+    UserCreate,
+    UserResponse,
+    Token,
+    UserUpdate,
+    LoginLogResponse,
+    ChangePasswordRequest,
+    SendVerificationCodeRequest,
+    SendVerificationCodeResponse,
+)
 from app.services import (
     create_user,
     authenticate_user,
@@ -21,6 +30,8 @@ from app.services import (
     get_user_login_logs,
     update_user,
 )
+from app.services.email_service import email_service
+from app.services.verification_service import verification_service
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
@@ -68,6 +79,58 @@ async def get_current_active_user(
     return current_user
 
 
+@router.post("/send-verification-code", response_model=SendVerificationCodeResponse)
+async def send_verification_code(
+    request: SendVerificationCodeRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    发送邮箱验证码
+
+    - **email**: 邮箱地址
+
+    注意：
+    - 验证码有效期为 5 分钟
+    - 每次发送会覆盖之前的验证码
+    - 验证码会在日志中打印（方便测试）
+    """
+    email = request.email
+
+    # 检查该邮箱是否已被注册
+    existing_user = get_user_by_email(db, email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该邮箱已被注册",
+        )
+
+    # 检查是否有未过期的验证码
+    remaining_time = verification_service.get_remaining_time(email)
+    if remaining_time is not None and remaining_time > 60:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"验证码已发送，请 {remaining_time // 60} 分钟后重试",
+        )
+
+    # 生成验证码
+    code = verification_service.generate_code()
+    verification_service.store_code(email, code)
+
+    # 发送邮件
+    email_sent = email_service.send_verification_code(email, code)
+
+    # 计算过期时间
+    from core.config import get_settings
+    settings = get_settings()
+    expire_in = settings.verification_code_expire_minutes * 60
+
+    return SendVerificationCodeResponse(
+        message="验证码已发送" if email_sent else "验证码已生成（邮件发送失败，请查看控制台）",
+        email=email,
+        expire_in=expire_in,
+    )
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserCreate,
@@ -79,8 +142,11 @@ async def register(
     - **username**: 用户名（3-50字符）
     - **email**: 邮箱地址
     - **password**: 密码（至少6字符）
+    - **verification_code**: 邮箱验证码（6位数字）
     - **full_name**: 全名（可选）
     - **phone**: 电话号码（可选）
+
+    注意：请先调用 /api/auth/send-verification-code 获取验证码
     """
     # 检查用户名是否已存在
     existing_user = get_user_by_username(db, user_data.username)
@@ -96,6 +162,13 @@ async def register(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="邮箱已被注册",
+        )
+
+    # 验证邮箱验证码
+    if not verification_service.verify_code(user_data.email, user_data.verification_code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码错误或已过期",
         )
 
     # 创建用户

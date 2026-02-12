@@ -37,10 +37,19 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
 
     # SMTP 邮件配置
-    smtp_host: str | None = None
-    smtp_port: int = 587
-    smtp_user: str | None = None
-    smtp_password: str | None = None
+    smtp_enabled: bool = True  # 是否启用邮件发送功能
+    smtp_host: str = ""  # SMTP 服务器地址，如: smtp.qq.com
+    smtp_port: int = 587  # SMTP 端口
+    smtp_from: str = ""  # 发件邮箱地址
+    smtp_user: str = ""  # SMTP 登录账号
+    smtp_password: str = ""  # 邮箱授权码（不是登录密码！）
+    smtp_from_name: str = "RFTIP 系统"  # 发件人名称
+    smtp_use_tls: bool = True  # 是否使用 TLS
+
+    # 验证码配置
+    verification_code_expire_minutes: int = 5  # 验证码过期时间（分钟）
+    verification_code_length: int = 6  # 验证码长度
+    log_verification_code: bool = True  # 是否在日志中打印验证码（开发调试用）
 
     # Error Handling Settings
     include_error_details: bool = False  # Include stack traces in error responses (dev only)
