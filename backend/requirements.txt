@@ -1,44 +1,66 @@
-# FastAPI and web server
-fastapi==0.115.0
-uvicorn[standard]==0.32.1
+﻿# ============================================
+# RFTIP 项目依赖配置
+# 安装命令: pip install -r requirements.txt
+# ============================================
 
-# Database
-sqlalchemy==2.0.36
-pymysql==1.1.1
+# --------------------
+# Web 框架 (核心)
+# --------------------
+fastapi==0.115.0              # FastAPI 主框架
+uvicorn[standard]==0.32.1     # ASGI 服务器，支持高性能异步处理
 
-# Configuration
-python-dotenv==1.0.1
-pydantic==2.10.3
-pydantic-settings==2.6.1
+# --------------------
+# 数据库
+# --------------------
+sqlalchemy==2.0.36            # ORM 框架
+pymysql==1.1.1                # MySQL 数据库驱动
 
-# Security
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.12
+# --------------------
+# 配置管理
+# --------------------
+python-dotenv==1.0.1          # 从 .env 文件加载环境变量
 
-# File uploads and processing
-aiofiles==24.1.0
+# --------------------
+# 安全与认证
+# --------------------
+python-jose[cryptography]==3.3.0   # JWT Token 生成与验证
+passlib[bcrypt]==1.7.4             # 密码哈希加密
+python-multipart==0.0.12           # 表单数据解析（文件上传）
 
-# Data processing and AI/ML
-numpy==1.26.4
-pandas==2.2.3
-scikit-learn==1.5.2
-filterpy==1.4.5
+# --------------------
+# 缓存与消息队列
+# --------------------
+redis==5.2.1                  # Redis 客户端（缓存、会话）
 
-# MinIO (optional)
-minio==7.2.8
+# --------------------
+# 对象存储
+# --------------------
+minio==7.2.8                  # MinIO 客户端（文件存储）
 
-# Background tasks (optional)
-celery==5.4.0
-redis==5.2.1
+# --------------------
+# 数据处理与机器学习
+# --------------------
+numpy==1.26.4                 # 数值计算基础库
+pandas==2.2.3                 # 数据处理与分析
+scikit-learn==1.5.2           # 机器学习算法库
+filterpy==1.4.5               # 卡尔曼滤波等滤波算法（航空轨迹分析）
 
-# Development and testing
-pytest==8.3.4
-pytest-cov==6.0.0
-httpx==0.28.1
+# --------------------
+# 异步文件操作
+# --------------------
+aiofiles==24.1.0              # 异步文件读写
 
-# Code formatting and linting
-black==24.10.0
-isort==5.13.2
-flake8==7.1.1
-mypy==1.14.1
+# ============================================
+# 开发测试工具 (可选，开发环境安装)
+# ============================================
+pytest==8.3.4                 # 单元测试框架
+pytest-cov==6.0.0             # 测试覆盖率统计
+httpx==0.28.1                 # HTTP 客户端（测试用）
+
+# ============================================
+# 代码规范工具 (可选，开发环境安装)
+# ============================================
+black==24.10.0                # 代码格式化
+isort==5.13.2                 # 导入排序
+flake8==7.1.1                 # 代码风格检查
+mypy==1.14.1                  # 静态类型检查

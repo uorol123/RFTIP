@@ -1,85 +1,104 @@
+"""
+应用配置模块
+所有配置从 .env 文件读取，代码中不保留任何默认值
+"""
 import os
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from functools import lru_cache
 from pathlib import Path
+from typing import List
+from types import SimpleNamespace
+from functools import lru_cache
+
+# 加载 .env 文件
+from dotenv import load_dotenv
+
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
 
-class Settings(BaseSettings):
-    # Application Settings
-    app_name: str = "RFTIP API"
-    app_version: str = "1.0.0"
-    debug: bool = False
+# Database Settings
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-    # Database Settings
-    database_url: str = "mysql+pymysql://root:password@localhost:3306/rftip_db"
+# Security Settings
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
-    # Security Settings
-    secret_key: str = "your-secret-key-change-this-in-production"
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+# CORS Settings
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173")
 
-    # CORS Settings
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+# Application Settings
+APP_NAME = os.getenv("APP_NAME", "RFTIP API")
+APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-    # Logging Settings
-    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-    log_format: str = "json"  # json or text
-    log_dir: str = "logs"
-    log_max_bytes: int = 10485760  # 10MB
-    log_backup_count: int = 5
-    log_request_body: bool = False  # Whether to log request bodies (security consideration)
-    log_response_body: bool = False  # Whether to log response bodies (security consideration)
-    slow_request_threshold_ms: float = 1000.0  # Threshold for slow request logging
+# MinIO Settings
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "False").lower() == "true"
 
-    # File Upload Settings
-    max_upload_size_mb: int = 100
-    allowed_file_extensions: list[str] = [".csv", ".xlsx", ".xls"]
-    upload_dir: str = "uploads"
+# Redis Settings
+REDIS_URL = os.getenv("REDIS_URL")
 
-    # SMTP 邮件配置
-    smtp_enabled: bool = True  # 是否启用邮件发送功能
-    smtp_host: str = ""  # SMTP 服务器地址，如: smtp.qq.com
-    smtp_port: int = 587  # SMTP 端口
-    smtp_from: str = ""  # 发件邮箱地址
-    smtp_user: str = ""  # SMTP 登录账号
-    smtp_password: str = ""  # 邮箱授权码（不是登录密码！）
-    smtp_from_name: str = "RFTIP 系统"  # 发件人名称
-    smtp_use_tls: bool = True  # 是否使用 TLS
+# SMTP Settings
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
-    # 验证码配置
-    verification_code_expire_minutes: int = 5  # 验证码过期时间（分钟）
-    verification_code_length: int = 6  # 验证码长度
-    log_verification_code: bool = True  # 是否在日志中打印验证码（开发调试用）
 
-    # Error Handling Settings
-    include_error_details: bool = False  # Include stack traces in error responses (dev only)
-    enable_error_notifications: bool = False  # Send notifications for critical errors
+def get_cors_origins() -> List[str]:
+    """将 CORS_ORIGINS 字符串转换为列表"""
+    return [origin.strip() for origin in CORS_ORIGINS.split(",")]
 
-    # Performance Monitoring
-    enable_performance_logging: bool = True
-    enable_query_logging: bool = False  # Log SQL queries (dev only)
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore"
-    )
-
-    @property
-    def logs_path(self) -> Path:
-        """Get the logs directory path."""
-        path = Path(self.log_dir)
-        path.mkdir(exist_ok=True)
-        return path
-
-    @property
-    def uploads_path(self) -> Path:
-        """Get the uploads directory path."""
-        path = Path(self.upload_dir)
-        path.mkdir(exist_ok=True)
-        return path
+def check_required_config() -> List[str]:
+    """检查必需的配置项是否已设置"""
+    required = {
+        "DATABASE_URL": DATABASE_URL,
+        "SECRET_KEY": SECRET_KEY,
+    }
+    missing = [name for name, value in required.items() if not value]
+    return missing
 
 
 @lru_cache()
-def get_settings() -> Settings:
-    return Settings()
+def get_settings():
+    """
+    获取配置对象（向后兼容）
+    返回包含所有配置的 SimpleNamespace 对象
+    """
+    return SimpleNamespace(
+        # Database
+        database_url=DATABASE_URL,
+
+        # Security
+        secret_key=SECRET_KEY,
+        algorithm=ALGORITHM,
+        access_token_expire_minutes=ACCESS_TOKEN_EXPIRE_MINUTES,
+
+        # CORS
+        cors_origins=CORS_ORIGINS,
+
+        # Application
+        app_name=APP_NAME,
+        app_version=APP_VERSION,
+        debug=DEBUG,
+
+        # MinIO
+        minio_endpoint=MINIO_ENDPOINT,
+        minio_access_key=MINIO_ACCESS_KEY,
+        minio_secret_key=MINIO_SECRET_KEY,
+        minio_bucket=MINIO_BUCKET,
+        minio_secure=MINIO_SECURE,
+
+        # Redis
+        redis_url=REDIS_URL,
+
+        # SMTP
+        smtp_host=SMTP_HOST,
+        smtp_port=SMTP_PORT,
+        smtp_user=SMTP_USER,
+        smtp_password=SMTP_PASSWORD,
+    )

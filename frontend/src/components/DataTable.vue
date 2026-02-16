@@ -79,7 +79,7 @@
             <td
               v-for="column in columns"
               :key="column.key"
-              :class="['table-cell', column.class)"
+              :class="['table-cell', column.class]"
             >
               <slot
                 v-if="$slots[`cell-${column.key}`]"

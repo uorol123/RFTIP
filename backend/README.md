@@ -96,17 +96,75 @@ backend/
 
 ## 快速开始
 
-### 环境准备
+> **推荐方式：使用 Docker 部署依赖服务**
+> 项目依赖 MySQL、Redis、MinIO 等服务，建议使用 Docker 快速搭建环境。详细说明请参考 [Docker 部署指南](./docker-deploy-guide.md)。
 
-1. **安装 Python 3.12+**
+---
 
-2. **创建虚拟环境**
+### 一、依赖服务部署
+
+#### 1. MySQL 数据库
+
+**方式 A：Docker 部署（推荐）**
+
+```bash
+# 启动 MySQL 容器
+docker run -d --name mysql \
+  -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=yourpassword \
+  -e MYSQL_DATABASE=rftip \
+  mysql:8.0
+```
+
+**方式 B：本地安装**
+
+下载并安装 [MySQL 8.0+](https://dev.mysql.com/downloads/mysql/)，然后创建数据库：
+
+```sql
+CREATE DATABASE rftip CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+#### 2. Redis 缓存
+
+**Docker 部署（推荐）**
+
+```bash
+docker run -d --name redis -p 6379:6379 redis
+```
+
+详细说明见：[Docker 部署指南 - Redis](./docker-deploy-guide.md#redis-缓存数据库)
+
+#### 3. MinIO 对象存储
+
+**Docker 部署（推荐）**
+
+```bash
+docker run -d --name minio \
+  -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data --console-address ":9001"
+```
+
+访问控制台：http://localhost:9001
+
+详细说明见：[Docker 部署指南 - MinIO](./docker-deploy-guide.md#minio-对象存储)
+
+---
+
+### 二、后端应用部署
+
+#### 1. 环境准备
+
+**安装 Python 3.12+**
+
+**创建虚拟环境**
 
 ```bash
 python -m venv venv
 ```
 
-3. **激活虚拟环境**
+**激活虚拟环境**
 
 Windows:
 ```bash
@@ -118,45 +176,53 @@ Linux/Mac:
 source venv/bin/activate
 ```
 
-4. **安装依赖**
+#### 2. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 数据库配置
+#### 3. 配置环境变量
 
-1. **安装 MySQL 8.0+**
-
-2. **创建数据库**
-
-```sql
-CREATE DATABASE rftip CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-3. **配置环境变量**
-
-复制环境变量模板并编辑：
+复制环境变量模板：
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env` 文件：
+编辑 `.env` 文件，配置数据库连接等信息
 
-```env
-DATABASE_URL=mysql+pymysql://username:password@localhost:3306/rftip_db
-SECRET_KEY=your-secure-random-secret-key
-DEBUG=True
-```
+> **生成 SECRET_KEY**：`python -c "import secrets; print(secrets.token_hex(32))"`
 
-4. **初始化数据库表**
+#### 4. 初始化服务
+
+运行初始化脚本，自动创建数据库表和 MinIO 存储桶：
 
 ```bash
-python main.py  # 首次启动会自动创建表
+python init_services.py
 ```
 
-### 启动服务
+该脚本会自动：
+- 创建数据库和所有表
+- 检查 Redis 连接
+- 创建 MinIO 存储桶
+- 创建必要的目录（logs/、uploads/、exports/）
+
+#### 5. 验证配置（可选）
+
+运行测试脚本验证各服务连接：
+
+```bash
+# 测试 MySQL、Redis、MinIO 连接
+python tests/test_connections.py
+
+# 测试 SMTP 邮箱配置
+python tests/test_smtp.py
+```
+
+---
+
+### 三、启动应用
 
 **开发模式：**
 
@@ -164,7 +230,7 @@ python main.py  # 首次启动会自动创建表
 python main.py
 ```
 
-或直接使用 uvicorn：
+或使用 uvicorn：
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -176,9 +242,21 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-服务将在 `http://localhost:8000` 启动
+或使用 Gunicorn + Uvicorn：
 
-API 文档地址：`http://localhost:8000/docs`
+```bash
+gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+```
+
+---
+
+### 四、访问服务
+
+| 服务 | 地址 |
+|------|------|
+| API 服务 | http://localhost:8000 |
+| API 文档 | http://localhost:8000/docs |
+| MinIO 控制台 | http://localhost:9001 |
 
 ---
 
@@ -291,6 +369,36 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 配置合适的连接池大小以提高性能。
 
 ---
+
+## 配置文件说明
+配置文件位于 `.env` 文件中，在项目一级目录，仓库提供一个示例文件 `.env.example`
+
+### 配置参考
+该项目使用了mysql，redis，minio等第三方工具，建议使用docker进行环境搭建，可以参考docker-deploy-guide.md
+
+### 邮箱配置说明
+根据你使用的邮箱，按以下步骤获取授权码：
+
+#### QQ 邮箱
+1. 登录 QQ 邮箱网页版
+2. 点击「设置」→「账户」
+3. 找到「POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV服务」
+4. 开启「IMAP/SMTP服务」
+5. 生成授权码（不是 QQ 密码！）
+
+#### 163 邮箱
+1. 登录 163 邮箱网页版
+2. 点击「设置」→「POP3/SMTP/IMAP」
+3. 开启「IMAP/SMTP服务」
+4. 发送短信验证后获取授权码
+
+#### Gmail
+1. 开启两步验证
+2. 进入 Google 账户安全设置
+3. 生成「应用专用密码」
+
+### 配置验证
+在tests目录下，运行test_smtp.py脚本可以测试配置是否正确
 
 ## 相关文档
 

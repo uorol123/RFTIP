@@ -205,7 +205,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, storeToRefs } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
