@@ -1,4 +1,4 @@
-# 基于多源数据融合的雷达轨迹监测与智能分析平台
+# 智能雷达轨迹分析平台
 
 **RadarFusionTrack Intelligence Platform (RFTIP)**
 

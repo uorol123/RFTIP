@@ -2,7 +2,7 @@
 
 **RadarFusionTrack Intelligence Platform - Backend**
 
-基于 FastAPI (Python) 构建的雷达轨迹监测与智能分析平台后端服务。
+基于 FastAPI (Python) 构建的智能雷达轨迹分析平台后端服务。
 
 ---
 
