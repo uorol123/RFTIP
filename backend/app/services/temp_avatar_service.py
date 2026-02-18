@@ -7,7 +7,10 @@ import pickle
 from typing import Optional
 
 from core.config import REDIS_URL
-from core.logging import logger
+from core.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class TempAvatarService:

@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from core.config import get_settings, REDIS_URL
 from core.database import get_db
-from core.logging import logger
+from core.logging import get_logger
 from app.schemas.auth import (
     UserCreate,
     UserResponse,
@@ -41,6 +41,7 @@ from app.services.temp_avatar_service import temp_avatar_service
 router = APIRouter(prefix="/auth", tags=["authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 settings = get_settings()
+logger = get_logger(__name__)
 
 
 async def get_current_user(

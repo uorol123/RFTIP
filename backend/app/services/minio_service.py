@@ -17,7 +17,10 @@ from core.config import (
     MINIO_BUCKET,
     MINIO_SECURE,
 )
-from core.logging import logger
+from core.logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class MinIOService:
