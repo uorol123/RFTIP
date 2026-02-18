@@ -17,6 +17,7 @@ export interface User {
   username: string
   email: string
   full_name?: string
+  phone?: string
   avatar_url?: string  // 后端原始字段名
   avatar?: string  // 前端兼容字段
   is_active: boolean
@@ -38,6 +39,7 @@ export interface RegisterRequest {
   verification_code: string
   full_name?: string
   phone?: string
+  temp_token?: string
 }
 
 export interface LoginResponse {

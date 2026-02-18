@@ -11,14 +11,18 @@ import type {
 
 // 函数式导出
 export async function login(data: LoginRequest): Promise<LoginResponse> {
+  const formData = new FormData()
+  formData.append('username', data.username)
+  formData.append('password', data.password)
+
   return apiCall(() =>
-    apiClient.post<LoginResponse>('/auth/login', data)
+    apiClient.post<LoginResponse>('/auth/login', formData)
   )
 }
 
-export async function register(data: RegisterRequest): Promise<LoginResponse> {
+export async function register(data: RegisterRequest): Promise<User> {
   return apiCall(() =>
-    apiClient.post<LoginResponse>('/auth/register', data)
+    apiClient.post<User>('/auth/register', data)
   )
 }
 
@@ -52,6 +56,16 @@ export async function changePassword(data: { old_password: string; new_password:
   )
 }
 
+// 上传临时头像
+export async function uploadTempAvatar(file: File): Promise<{ temp_token: string; message: string }> {
+  const formData = new FormData()
+  formData.append('avatar', file)
+
+  return apiCall(() =>
+    apiClient.post<{ temp_token: string; message: string }>('/auth/upload-temp-avatar', formData)
+  )
+}
+
 // 发送验证码
 export async function sendVerificationCode(email: string): Promise<{ message: string; email: string; expire_in: number }> {
   return apiCall(() =>
@@ -65,8 +79,9 @@ export const authApi = {
   register,
   logout,
   getProfile,
-  updateProfile,
+  update: updateProfile,
   getLoginLogs,
   changePassword,
   sendVerificationCode,
+  uploadTempAvatar,
 }

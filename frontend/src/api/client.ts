@@ -26,6 +26,14 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${authStore.token}`
     }
 
+    // If data is FormData, remove default Content-Type to let axios set it automatically
+    // with proper boundary for file uploads
+    if (config.data instanceof FormData) {
+      if (config.headers) {
+        delete config.headers['Content-Type']
+      }
+    }
+
     // Add request ID for tracking
     const requestId = ++requestIdCounter
     config.headers['X-Request-ID'] = `req_${requestId}`
@@ -40,6 +48,7 @@ apiClient.interceptors.request.use(
         headers: config.headers,
         params: config.params,
         hasData: !!config.data,
+        isFormData: config.data instanceof FormData,
       }
     )
 

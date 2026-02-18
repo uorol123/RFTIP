@@ -134,9 +134,10 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "code": error["type"],
             })
 
-        # Log validation errors
+        # Log validation errors with details
+        error_details = "\n  ".join([f"- {e['field']}: {e['message']} ({e['code']})" for e in errors])
         logger.warning(
-            f"Validation error: {len(errors)} field(s)",
+            f"Validation error: {len(errors)} field(s)\n  {error_details}",
             extra={
                 "request_id": request_id,
                 "path": request.url.path,
@@ -229,8 +230,10 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "code": error["type"],
             })
 
+        # Log validation errors with details
+        error_details = "\n  ".join([f"- {e['field']}: {e['message']} ({e['code']})" for e in errors])
         logger.warning(
-            f"Pydantic validation error: {len(errors)} error(s)",
+            f"Pydantic validation error: {len(errors)} error(s)\n  {error_details}",
             extra={
                 "request_id": request_id,
                 "path": request.url.path,

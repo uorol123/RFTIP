@@ -63,8 +63,9 @@
                 </div>
 
                 <!-- Upload Button -->
-                <label class="avatar-upload-btn">
+                <label class="avatar-upload-btn" @click="handleAvatarUploadClick">
                   <input
+                    ref="avatarInputRef"
                     type="file"
                     accept="image/*"
                     @change="handleAvatarSelect"
@@ -132,8 +133,11 @@
                     autocomplete="email"
                     :disabled="loading"
                     class="form-input"
+                    :class="{ 'has-error': errors.email }"
+                    @blur="validateField('email')"
                   />
                 </div>
+                <span v-if="errors.email" class="field-error">{{ errors.email }}</span>
               </div>
 
               <!-- Verification Code -->
@@ -187,6 +191,8 @@
                     :disabled="loading"
                     minlength="6"
                     class="form-input pr-10"
+                    :class="{ 'has-error': errors.password }"
+                    @blur="validateField('password')"
                   />
                   <button
                     type="button"
@@ -202,6 +208,7 @@
                     </svg>
                   </button>
                 </div>
+                <span v-if="errors.password" class="field-error">{{ errors.password }}</span>
               </div>
 
               <!-- Confirm Password -->
@@ -221,6 +228,8 @@
                     autocomplete="new-password"
                     :disabled="loading"
                     class="form-input pr-10"
+                    :class="{ 'has-error': errors.confirm_password }"
+                    @blur="validateField('confirm_password')"
                   />
                   <button
                     type="button"
@@ -236,6 +245,7 @@
                     </svg>
                   </button>
                 </div>
+                <span v-if="errors.confirm_password" class="field-error">{{ errors.confirm_password }}</span>
               </div>
 
               <!-- Full Name (Optional) -->
@@ -257,6 +267,30 @@
                     class="form-input"
                   />
                 </div>
+              </div>
+
+              <!-- Phone (Optional) -->
+              <div class="form-field form-field-full">
+                <label class="field-label">手机号（可选）</label>
+                <div class="input-wrapper">
+                  <div class="input-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+                    </svg>
+                  </div>
+                  <input
+                    v-model="form.phone"
+                    type="tel"
+                    placeholder="请输入手机号"
+                    autocomplete="tel"
+                    :disabled="loading"
+                    maxlength="11"
+                    class="form-input"
+                    :class="{ 'has-error': errors.phone }"
+                    @blur="validateField('phone')"
+                  />
+                </div>
+                <span v-if="errors.phone" class="field-error">{{ errors.phone }}</span>
               </div>
             </div>
 
@@ -332,8 +366,14 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" @click="closeCropper" class="btn-secondary">取消</button>
-          <button type="button" @click="confirmCrop" class="btn-primary">确认裁剪</button>
+          <button type="button" @click="closeCropper" class="btn-secondary" :disabled="avatarUploading">取消</button>
+          <button type="button" @click="confirmCrop" class="btn-primary" :disabled="avatarUploading">
+            <svg v-if="avatarUploading" viewBox="0 0 24 24" fill="none" class="w-4 h-4 animate-spin">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" opacity="0.25"/>
+              <path d="M12 2A10 10 0 0112 22" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>
+            </svg>
+            <span>{{ avatarUploading ? '上传中...' : '确认裁剪' }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -363,19 +403,69 @@ const showConfirmPassword = ref(false)
 // Avatar state
 const avatarPreview = ref<string | null>(null)
 const avatarFile = ref<File | null>(null)
+const avatarTempToken = ref<string | null>(null)
+const avatarUploading = ref(false)
 const showCropper = ref(false)
 const imageToCrop = ref<string>('')
 const cropperRef = ref<InstanceType<typeof Cropper> | null>(null)
+const avatarInputRef = ref<HTMLInputElement | null>(null)
 
 const form = reactive({
   username: '',
   email: '',
+  phone: '',
   verification_code: '',
   password: '',
   confirm_password: '',
   full_name: '',
   agreeToTerms: false,
 })
+
+// 表单验证错误
+const errors = reactive({
+  email: '',
+  phone: '',
+  password: '',
+  confirm_password: '',
+})
+
+// 验证规则
+const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email)
+}
+
+const validatePhone = (phone: string): boolean => {
+  // 中国大陆手机号：1开头，11位数字
+  const phoneRegex = /^1[3-9]\d{9}$/
+  return phone === '' || phoneRegex.test(phone)
+}
+
+const validatePassword = (password: string): boolean => {
+  return password.length >= 6
+}
+
+// 实时验证
+function validateField(field: string) {
+  switch (field) {
+    case 'email':
+      errors.email = form.email && !validateEmail(form.email) ? '请输入有效的邮箱地址' : ''
+      break
+    case 'phone':
+      errors.phone = form.phone && !validatePhone(form.phone) ? '请输入有效的手机号' : ''
+      break
+    case 'password':
+      errors.password = form.password && !validatePassword(form.password) ? '密码至少6位' : ''
+      // 密码变化时重新检查确认密码
+      if (form.confirm_password) {
+        errors.confirm_password = form.confirm_password !== form.password ? '两次输入的密码不一致' : ''
+      }
+      break
+    case 'confirm_password':
+      errors.confirm_password = form.confirm_password && form.confirm_password !== form.password ? '两次输入的密码不一致' : ''
+      break
+  }
+}
 
 const canSendCode = computed(() => {
   return form.email && countdown.value === 0
@@ -394,10 +484,21 @@ const isFormValid = computed(() => {
          form.verification_code &&
          form.password &&
          form.confirm_password &&
-         form.agreeToTerms
+         form.agreeToTerms &&
+         !errors.email &&
+         !errors.phone &&
+         !errors.password &&
+         !errors.confirm_password
 })
 
 // Avatar handling
+function handleAvatarUploadClick() {
+  // 清空 input 值，确保每次都能触发 change 事件
+  if (avatarInputRef.value) {
+    avatarInputRef.value.value = ''
+  }
+}
+
 function handleAvatarSelect(event: Event) {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
@@ -421,15 +522,32 @@ function handleAvatarSelect(event: Event) {
   reader.readAsDataURL(file)
 }
 
-function confirmCrop() {
+async function confirmCrop() {
   if (!cropperRef.value) return
 
   const { canvas } = cropperRef.value.getResult()
-  canvas.toBlob((blob) => {
+  canvas.toBlob(async (blob) => {
     if (blob) {
-      avatarFile.value = new File([blob], 'avatar.jpg', { type: 'image/jpeg' })
+      const file = new File([blob], 'avatar.jpg', { type: 'image/jpeg' })
+      avatarFile.value = file
       avatarPreview.value = URL.createObjectURL(blob)
-      closeCropper()
+
+      // 立即上传获取 temp_token
+      avatarUploading.value = true
+      try {
+        const response = await authApi.uploadTempAvatar(file)
+        avatarTempToken.value = response.temp_token
+        appStore.success('头像上传成功')
+      } catch (error: any) {
+        appStore.error(error.message || '头像上传失败')
+        // 上传失败时重置
+        avatarPreview.value = null
+        avatarFile.value = null
+        avatarTempToken.value = null
+      } finally {
+        avatarUploading.value = false
+        closeCropper()
+      }
     }
   }, 'image/jpeg', 0.9)
 }
@@ -442,6 +560,7 @@ function closeCropper() {
 function removeAvatar() {
   avatarPreview.value = null
   avatarFile.value = null
+  avatarTempToken.value = null
 }
 
 async function handleSendCode() {
@@ -486,32 +605,24 @@ async function handleRegister() {
   loading.value = true
 
   try {
-    const formData = new FormData()
-    formData.append('username', form.username)
-    formData.append('email', form.email)
-    formData.append('password', form.password)
-    formData.append('verification_code', form.verification_code)
-    if (form.full_name) {
-      formData.append('full_name', form.full_name)
+    // 构建注册请求数据
+    const requestData = {
+      username: form.username,
+      email: form.email,
+      password: form.password,
+      verification_code: form.verification_code,
+      full_name: form.full_name || undefined,
+      phone: form.phone || undefined,
+      temp_token: avatarTempToken.value || undefined,
     }
-    if (avatarFile.value) {
-      formData.append('avatar', avatarFile.value)
-    }
 
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      body: formData,
-    }).then(res => {
-      if (!res.ok) throw new Error('注册失败，请重试')
-      return res.json()
-    })
+    // 发送注册请求
+    await authApi.register(requestData)
 
-    authStore.setToken(response.access_token)
-    authStore.setUser(response.user)
+    appStore.success('注册成功！请登录您的账户')
 
-    appStore.success('注册成功！欢迎加入 RFTIP')
-
-    router.push('/dashboard')
+    // 注册成功后跳转到登录页
+    router.push('/login')
   } catch (error: any) {
     appStore.error(error.message || '注册失败，请重试')
   } finally {
@@ -790,6 +901,33 @@ async function handleRegister() {
 
 .form-input.pr-10 {
   padding-right: 40px;
+}
+
+.form-input.has-error {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.form-input.has-error:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.field-error {
+  font-size: 11px;
+  color: #ef4444;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.field-error::before {
+  content: '';
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ef4444;
 }
 
 .password-toggle {

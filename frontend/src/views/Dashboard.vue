@@ -2,25 +2,21 @@
   <div class="dashboard">
     <div class="dashboard-header">
       <div>
-        <h1 class="dashboard-title">Welcome back, {{ user?.username || 'User' }}!</h1>
-        <p class="dashboard-subtitle">Here's what's happening with your radar data</p>
+        <h1 class="dashboard-title">欢迎回来，{{ user?.username || '用户' }}！</h1>
+        <p class="dashboard-subtitle">这是您的雷达轨迹分析控制台</p>
       </div>
       <div class="header-actions">
         <button class="btn btn-primary" @click="navigateToUpload">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          Upload Data
+          上传数据
         </button>
       </div>
     </div>
 
-    <div v-if="loading" class="dashboard-loading">
-      <Loading message="Loading dashboard..." :fullscreen="false" />
-    </div>
-
-    <div v-else class="dashboard-content">
-      <!-- Stats Cards -->
+    <div class="dashboard-content">
+      <!-- 统计卡片 -->
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon stat-icon-blue">
@@ -34,7 +30,7 @@
             </svg>
           </div>
           <div class="stat-content">
-            <div class="stat-label">Total Files</div>
+            <div class="stat-label">数据文件</div>
             <div class="stat-value">{{ stats.totalFiles }}</div>
           </div>
         </div>
@@ -51,7 +47,7 @@
             </svg>
           </div>
           <div class="stat-content">
-            <div class="stat-label">Total Tracks</div>
+            <div class="stat-label">轨迹总数</div>
             <div class="stat-value">{{ formatNumber(stats.totalTracks) }}</div>
           </div>
         </div>
@@ -74,7 +70,7 @@
             </svg>
           </div>
           <div class="stat-content">
-            <div class="stat-label">No-Fly Zones</div>
+            <div class="stat-label">禁飞区</div>
             <div class="stat-value">{{ stats.totalZones }}</div>
           </div>
         </div>
@@ -91,15 +87,15 @@
             </svg>
           </div>
           <div class="stat-content">
-            <div class="stat-label">Recent Intrusions</div>
+            <div class="stat-label">入侵记录</div>
             <div class="stat-value">{{ stats.recentIntrusions }}</div>
           </div>
         </div>
       </div>
 
-      <!-- Quick Actions -->
+      <!-- 快捷操作 -->
       <div class="dashboard-section">
-        <h2 class="section-title">Quick Actions</h2>
+        <h2 class="section-title">快捷操作</h2>
         <div class="quick-actions">
           <router-link to="/data" class="quick-action">
             <div class="quick-action-icon quick-action-icon-blue">
@@ -113,8 +109,8 @@
               </svg>
             </div>
             <div class="quick-action-content">
-              <div class="quick-action-title">Upload Data</div>
-              <div class="quick-action-desc">Import radar data files</div>
+              <div class="quick-action-title">数据管理</div>
+              <div class="quick-action-desc">上传和管理雷达数据文件</div>
             </div>
           </router-link>
 
@@ -130,8 +126,8 @@
               </svg>
             </div>
             <div class="quick-action-content">
-              <div class="quick-action-title">Visualize Tracks</div>
-              <div class="quick-action-desc">View 3D trajectory visualization</div>
+              <div class="quick-action-title">轨迹可视化</div>
+              <div class="quick-action-desc">查看三维轨迹可视化</div>
             </div>
           </router-link>
 
@@ -147,8 +143,8 @@
               </svg>
             </div>
             <div class="quick-action-content">
-              <div class="quick-action-title">Manage Zones</div>
-              <div class="quick-action-desc">Configure no-fly zones</div>
+              <div class="quick-action-title">禁飞区管理</div>
+              <div class="quick-action-desc">配置禁飞区和预警</div>
             </div>
           </router-link>
 
@@ -164,33 +160,40 @@
               </svg>
             </div>
             <div class="quick-action-content">
-              <div class="quick-action-title">AI Analysis</div>
-              <div class="quick-action-desc">Analyze trajectory patterns</div>
+              <div class="quick-action-title">AI 分析</div>
+              <div class="quick-action-desc">智能分析轨迹模式</div>
             </div>
           </router-link>
         </div>
       </div>
 
-      <!-- Recent Files -->
+      <!-- 最近文件 -->
       <div class="dashboard-section">
         <div class="section-header">
-          <h2 class="section-title">Recent Files</h2>
-          <router-link to="/data" class="section-link">View All</router-link>
+          <h2 class="section-title">最近文件</h2>
+          <router-link to="/data" class="section-link">查看全部</router-link>
         </div>
         <div v-if="recentFiles.length === 0" class="section-empty">
-          <EmptyState
-            title="No files yet"
-            description="Upload your first radar data file to get started"
-          >
-            <template #action>
-              <router-link to="/data" class="btn btn-primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                Upload Files
-              </router-link>
-            </template>
-          </EmptyState>
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            </div>
+            <div class="empty-title">暂无数据文件</div>
+            <div class="empty-desc">上传您的第一个雷达数据文件开始使用</div>
+            <router-link to="/data" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              上传文件
+            </router-link>
+          </div>
         </div>
         <div v-else class="files-list">
           <div
@@ -210,10 +213,10 @@
               </svg>
             </div>
             <div class="file-info">
-              <div class="file-name">{{ file.original_filename }}</div>
+              <div class="file-name">{{ file.original_filename || file.file_name }}</div>
               <div class="file-meta">
                 <span class="file-status" :class="`status-${file.status}`">
-                  {{ file.status }}
+                  {{ getStatusText(file.status) }}
                 </span>
                 <span class="file-date">{{ formatDate(file.upload_time) }}</span>
               </div>
@@ -223,11 +226,24 @@
         </div>
       </div>
 
-      <!-- Recent Activity -->
+      <!-- 最近活动 -->
       <div class="dashboard-section">
-        <h2 class="section-title">Recent Activity</h2>
+        <h2 class="section-title">最近活动</h2>
         <div v-if="activities.length === 0" class="section-empty">
-          <EmptyState title="No recent activity" description="Your activity will appear here" />
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <div class="empty-title">暂无活动记录</div>
+            <div class="empty-desc">您的活动将显示在这里</div>
+          </div>
         </div>
         <div v-else class="activity-list">
           <div v-for="activity in activities" :key="activity.id" class="activity-item">
@@ -279,20 +295,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
-import { useAppStore } from '@/stores/app'
-import { filesApi, zonesApi } from '@/api'
-import type { DataFile } from '@/api/types'
-import EmptyState from '@/components/EmptyState.vue'
-import Loading from '@/components/Loading.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-const appStore = useAppStore()
 
 const { user } = storeToRefs(authStore)
 
-const loading = ref(true)
-const recentFiles = ref<DataFile[]>([])
+const recentFiles = ref<any[]>([])
 
 interface Activity {
   id: number
@@ -305,19 +314,19 @@ const activities = ref<Activity[]>([
   {
     id: 1,
     type: 'upload',
-    text: 'File "radar_data_2024.csv" uploaded successfully',
+    text: '文件 "radar_data_2024.csv" 上传成功',
     time: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
   },
   {
     id: 2,
     type: 'analysis',
-    text: 'Trajectory analysis completed for track #12345',
+    text: '轨迹 #12345 的分析已完成',
     time: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
   },
   {
     id: 3,
     type: 'zone',
-    text: 'New no-fly zone "Airport Restricted" created',
+    text: '新禁飞区 "机场限制区" 已创建',
     time: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   },
 ])
@@ -330,25 +339,14 @@ const stats = ref({
 })
 
 const loadDashboardData = async () => {
-  loading.value = true
-  try {
-    const [filesData, zonesData] = await Promise.all([
-      filesApi.list({ page: 1, page_size: 5 }).catch(() => ({ items: [], total: 0 })),
-      zonesApi.list().catch(() => ({ items: [], total: 0 })),
-    ])
-
-    recentFiles.value = filesData.items
-    stats.value = {
-      totalFiles: filesData.total,
-      totalTracks: 15420, // This would come from an API endpoint
-      totalZones: zonesData.total,
-      recentIntrusions: 3,
-    }
-  } catch (error) {
-    appStore.error('Failed to load dashboard data')
-  } finally {
-    loading.value = false
+  // 静态数据，暂时不调用 API
+  stats.value = {
+    totalFiles: 0,
+    totalTracks: 0,
+    totalZones: 0,
+    recentIntrusions: 0,
   }
+  recentFiles.value = []
 }
 
 const navigateToUpload = () => {
@@ -359,6 +357,16 @@ const navigateToFile = (fileId: number) => {
   router.push(`/data/${fileId}`)
 }
 
+const getStatusText = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    pending: '待处理',
+    processing: '处理中',
+    completed: '已完成',
+    failed: '失败',
+  }
+  return statusMap[status] || status
+}
+
 const formatNumber = (num: number): string => {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -366,7 +374,7 @@ const formatNumber = (num: number): string => {
 }
 
 const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 Bytes'
+  if (!bytes) return '0 Bytes'
   const k = 1024
   const sizes = ['Bytes', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
@@ -374,6 +382,7 @@ const formatFileSize = (bytes: number): string => {
 }
 
 const formatDate = (dateString: string): string => {
+  if (!dateString) return ''
   const date = new Date(dateString)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
@@ -381,11 +390,11 @@ const formatDate = (dateString: string): string => {
   const diffHours = Math.floor(diffMs / 3600000)
   const diffDays = Math.floor(diffMs / 86400000)
 
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString()
+  if (diffMins < 1) return '刚刚'
+  if (diffMins < 60) return `${diffMins}分钟前`
+  if (diffHours < 24) return `${diffHours}小时前`
+  if (diffDays < 7) return `${diffDays}天前`
+  return date.toLocaleDateString('zh-CN')
 }
 
 const formatRelativeTime = (dateString: string): string => {
@@ -429,11 +438,6 @@ onMounted(() => {
 .header-actions {
   display: flex;
   gap: 0.75rem;
-}
-
-.dashboard-loading {
-  position: relative;
-  min-height: 400px;
 }
 
 .dashboard-content {
@@ -550,6 +554,37 @@ onMounted(() => {
 
 .section-empty {
   padding: 2rem 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+
+.empty-icon {
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 1rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.empty-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
 }
 
 .quick-actions {

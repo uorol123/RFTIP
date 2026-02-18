@@ -6,6 +6,7 @@ import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 from typing import Optional
 from core.config import get_settings
 
@@ -49,7 +50,7 @@ class EmailService:
             # 创建邮件
             message = MIMEMultipart("alternative")
             message["Subject"] = f"{self.smtp_from_name} - 邮箱验证码"
-            message["From"] = f"{self.smtp_from_name} <{self.smtp_from}>"
+            message["From"] = formataddr((self.smtp_from_name, self.smtp_user))
             message["To"] = to_email
 
             # 邮件内容（HTML 格式）
@@ -89,7 +90,7 @@ class EmailService:
                     </div>
                     <div class="footer">
                         <p>此邮件由系统自动发送，请勿直接回复</p>
-                        <p>&copy; 2024 {self.smtp_from_name}. All rights reserved.</p>
+                        <p>&copy; 2026 {self.smtp_from_name}. All rights reserved.</p>
                     </div>
                 </div>
             </body>
@@ -100,11 +101,18 @@ class EmailService:
             message.attach(html_part)
 
             # 连接 SMTP 服务器并发送
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                if self.use_tls:
-                    server.starttls()
-                server.login(self.smtp_user, self.smtp_password)
-                server.send_message(message)
+            if self.smtp_port == 465:
+                # 端口 465 使用 SSL
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_password)
+                    server.send_message(message)
+            else:
+                # 其他端口使用 STARTTLS
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    if self.use_tls:
+                        server.starttls()
+                    server.login(self.smtp_user, self.smtp_password)
+                    server.send_message(message)
 
             logger.info(f"验证码邮件已发送至: {to_email}")
             return True

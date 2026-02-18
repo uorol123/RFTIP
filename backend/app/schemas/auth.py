@@ -60,8 +60,8 @@ class UserUpdate(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     """修改密码请求模型"""
-    old_password: str = Field(..., min_length=6, description="旧密码")
-    new_password: str = Field(..., min_length=6, description="新密码")
+    old_password: str = Field(..., min_length=6, max_length=50, description="旧密码")
+    new_password: str = Field(..., min_length=6, max_length=50, description="新密码")
 
 
 class UserResponse(UserBase):

@@ -154,6 +154,7 @@ import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { authApi } from '@/api'
 import GlobeBackground from '@/components/GlobeBackground.vue'
 
 const router = useRouter()
@@ -174,20 +175,9 @@ async function handleLogin() {
   loading.value = true
 
   try {
-    // 使用 URL-encoded 格式发送登录请求
-    const params = new URLSearchParams()
-    params.append('username', form.username)
-    params.append('password', form.password)
-
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params,
-    }).then(res => {
-      if (!res.ok) throw new Error('登录失败，请检查用户名和密码')
-      return res.json()
+    const response = await authApi.login({
+      username: form.username,
+      password: form.password,
     })
 
     // Store auth data

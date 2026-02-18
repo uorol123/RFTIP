@@ -57,13 +57,14 @@ class VerificationCodeService:
 
         # 在日志中打印验证码（方便调试）
         if settings.log_verification_code:
-            logger.info(f"=" * 50)
-            logger.info(f"📧 验证码已生成")
-            logger.info(f"邮箱: {email}")
-            logger.info(f"验证码: {code}")
-            logger.info(f"有效期: {expire_minutes} 分钟")
-            logger.info(f"过期时间: {expire_at.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"=" * 50)
+            # 使用 print 确保验证码一定能在控制台看到
+            print("=" * 50)
+            print("📧 邮箱验证码")
+            print(f"邮箱: {email}")
+            print(f"验证码: {code}")
+            print(f"有效期: {expire_minutes} 分钟")
+            print(f"过期时间: {expire_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            print("=" * 50)
 
     def verify_code(self, email: str, code: str, consume: bool = True) -> bool:
         """
