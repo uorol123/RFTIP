@@ -214,10 +214,10 @@ python init_services.py
 
 ```bash
 # 测试 MySQL、Redis、MinIO 连接
-python tests/test_connections.py
+python init_services.py
 
 # 测试 SMTP 邮箱配置
-python tests/test_smtp.py
+python scripts/smtp.py
 ```
 
 ---

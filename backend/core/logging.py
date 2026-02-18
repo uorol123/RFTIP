@@ -100,6 +100,7 @@ def setup_logging() -> logging.Logger:
     log_file = log_dir / f"{settings.app_name}.log"
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
+    file_handler.addFilter(RequestIdFilter())
 
     # Use JSON formatter in production, colored text in development
     if settings.debug:

@@ -1,91 +1,150 @@
 <template>
   <div class="login-page">
-    <div class="login-background"></div>
-    <div class="login-container">
-      <div class="login-content glass">
-        <div class="login-header">
-          <div class="login-logo">
-            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="24" cy="24" r="20" stroke="url(#grad1)" stroke-width="2"/>
-              <circle cx="24" cy="24" r="14" stroke="url(#grad1)" stroke-width="1.5" stroke-opacity="0.6"/>
-              <circle cx="24" cy="24" r="8" stroke="url(#grad1)" stroke-width="1" stroke-opacity="0.3"/>
-              <line x1="24" y1="24" x2="40" y2="10" stroke="url(#grad1)" stroke-width="2" stroke-linecap="round"/>
-              <circle cx="40" cy="10" r="3" fill="url(#grad1)"/>
-              <defs>
-                <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#3B82F6"/>
-                  <stop offset="100%" stop-color="#10B981"/>
-                </linearGradient>
-              </defs>
-            </svg>
-            <span>RFTIP</span>
-          </div>
-          <h1>欢迎回来</h1>
-          <p>登录您的账户以访问雷达轨迹融合追踪平台</p>
-        </div>
+    <GlobeBackground />
 
-        <form @submit.prevent="handleLogin" class="login-form">
-          <div class="form-group">
-            <label for="username">用户名</label>
-            <div class="input-wrapper">
-              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <!-- 主内容区 -->
+    <div class="content-wrapper">
+      <!-- Header -->
+      <header class="header">
+        <router-link to="/" class="logo">
+          <div class="logo-icon">
+            <svg viewBox="0 0 48 48" fill="none" class="w-6 h-6">
+              <circle cx="24" cy="24" r="16" stroke="white" stroke-width="2.5" opacity="0.3"/>
+              <circle cx="24" cy="24" r="10" stroke="white" stroke-width="2" opacity="0.6"/>
+              <line x1="24" y1="24" x2="38" y2="12" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="38" cy="12" r="4" fill="white"/>
+            </svg>
+          </div>
+          <span class="logo-text">RFTIP</span>
+        </router-link>
+
+        <router-link to="/" class="back-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          返回首页
+        </router-link>
+      </header>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <div class="login-card">
+          <!-- Card Header -->
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-8 h-8">
                 <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
                 <circle cx="12" cy="7" r="4"/>
               </svg>
-              <input
-                id="username"
-                v-model="form.username"
-                type="text"
-                placeholder="请输入用户名"
-                required
-                autocomplete="username"
-                :disabled="loading"
-              />
             </div>
+            <h2 class="card-title">欢迎回来</h2>
+            <p class="card-subtitle">登录以继续您的数据分析之旅</p>
           </div>
 
-          <div class="form-group">
-            <label for="password">密码</label>
-            <div class="input-wrapper">
-              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                <path d="M7 11V7a5 5 0 0110 0v4"/>
+          <!-- Form -->
+          <form @submit.prevent="handleLogin" class="login-form">
+            <!-- Username Field -->
+            <div class="form-field">
+              <label for="username" class="field-label">
+                用户名或邮箱
+              </label>
+              <div class="input-wrapper">
+                <div class="input-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5">
+                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                  </svg>
+                </div>
+                <input
+                  id="username"
+                  v-model="form.username"
+                  type="text"
+                  placeholder="输入用户名或邮箱"
+                  required
+                  autocomplete="username"
+                  :disabled="loading"
+                  class="form-input"
+                />
+              </div>
+            </div>
+
+            <!-- Password Field -->
+            <div class="form-field">
+              <label for="password" class="field-label">
+                密码
+              </label>
+              <div class="input-wrapper">
+                <div class="input-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0110 0v4"/>
+                  </svg>
+                </div>
+                <input
+                  id="password"
+                  v-model="form.password"
+                  :type="showPassword ? 'text' : 'password'"
+                  placeholder="输入密码"
+                  required
+                  autocomplete="current-password"
+                  :disabled="loading"
+                  class="form-input pr-12"
+                />
+                <button
+                  type="button"
+                  @click="showPassword = !showPassword"
+                  class="password-toggle"
+                >
+                  <svg v-if="!showPassword" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5">
+                    <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                  </svg>
+                  <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5">
+                    <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Remember & Forgot -->
+            <div class="form-actions">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="form.remember" class="sr-only peer">
+                <div class="checkbox-custom"></div>
+                <span>记住我</span>
+              </label>
+              <router-link to="/forgot-password" class="forgot-link">
+                忘记密码？
+              </router-link>
+            </div>
+
+            <!-- Submit Button -->
+            <button
+              type="submit"
+              :disabled="loading || !form.username || !form.password"
+              class="submit-btn"
+            >
+              <svg v-if="loading" viewBox="0 0 24 24" fill="none" class="w-5 h-5 animate-spin">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" opacity="0.25"/>
+                <path d="M12 2A10 10 0 0112 22" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round"/>
               </svg>
-              <input
-                id="password"
-                v-model="form.password"
-                type="password"
-                placeholder="请输入密码"
-                required
-                autocomplete="current-password"
-                :disabled="loading"
-              />
-            </div>
+              <span>{{ loading ? '登录中...' : '登录' }}</span>
+            </button>
+          </form>
+
+          <!-- Footer -->
+          <div class="card-footer">
+            <p>还没有账号？
+              <router-link to="/register" class="register-link">
+                立即注册
+              </router-link>
+            </p>
           </div>
-
-          <div class="form-options">
-            <label class="checkbox-wrapper">
-              <input type="checkbox" v-model="form.remember" />
-              <span>记住我</span>
-            </label>
-            <a href="#" class="forgot-link">忘记密码?</a>
-          </div>
-
-          <button type="submit" class="submit-btn" :disabled="loading">
-            <svg v-if="!loading" class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4m-5 4l-4-4m0 0l4-4m-4 4h14"/>
-            </svg>
-            <svg v-else class="btn-icon spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-            </svg>
-            {{ loading ? '登录中...' : '登录' }}
-          </button>
-        </form>
-
-        <div class="login-footer">
-          <p>还没有账号？<router-link to="/register">立即注册</router-link></p>
         </div>
-      </div>
+
+        <!-- Copyright -->
+        <p class="copyright">© 2026 RFTIP. All rights reserved.</p>
+      </main>
     </div>
   </div>
 </template>
@@ -95,7 +154,7 @@ import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import { authApi } from '@/api'
+import GlobeBackground from '@/components/GlobeBackground.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -103,6 +162,7 @@ const authStore = useAuthStore()
 const appStore = useAppStore()
 
 const loading = ref(false)
+const showPassword = ref(false)
 
 const form = reactive({
   username: '',
@@ -114,9 +174,20 @@ async function handleLogin() {
   loading.value = true
 
   try {
-    const response = await authApi.login({
-      username: form.username,
-      password: form.password,
+    // 使用 URL-encoded 格式发送登录请求
+    const params = new URLSearchParams()
+    params.append('username', form.username)
+    params.append('password', form.password)
+
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params,
+    }).then(res => {
+      if (!res.ok) throw new Error('登录失败，请检查用户名和密码')
+      return res.json()
     })
 
     // Store auth data
@@ -139,102 +210,143 @@ async function handleLogin() {
 
 <style scoped>
 .login-page {
-  min-height: 100vh;
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.content-wrapper {
+  position: relative;
+  z-index: 10;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 32px;
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.logo-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-primary);
-  position: relative;
-  overflow: hidden;
-  transition: background 0.3s ease;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
-.login-background {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background:
-    radial-gradient(ellipse 60% 40% at 20% 30%, rgba(59, 130, 246, 0.06), transparent),
-    radial-gradient(ellipse 50% 30% at 80% 70%, rgba(16, 185, 129, 0.04), transparent);
-  pointer-events: none;
+.logo-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 0.5px;
 }
 
-.login-container {
-  width: 100%;
-  max-width: 440px;
-  padding: 2rem;
-  position: relative;
-  z-index: 1;
-}
-
-.login-content {
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--glass-border);
-  border-radius: 1.5rem;
-  padding: 2.5rem;
-  box-shadow: var(--shadow-xl);
-  transition: background 0.3s ease, border-color 0.3s ease;
-}
-
-.login-header {
-  text-align: center;
-  margin-bottom: 2rem;
-}
-
-.login-logo {
+.back-link {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  border-radius: 8px;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.back-link:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  padding: 20px 32px 32px;
 }
 
-.login-logo svg {
-  width: 48px;
-  height: 48px;
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(17, 24, 39, 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
-.login-logo span {
-  font-size: 1.5rem;
+/* Card Header */
+.card-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.card-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #3b82f6, #10b981);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+  color: white;
+}
+
+.card-title {
+  font-size: 24px;
   font-weight: 700;
-  background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: white;
+  margin: 0 0 8px;
 }
 
-.login-header h1 {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 0.5rem;
+.card-subtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
 }
 
-.login-header p {
-  color: var(--text-secondary);
-  font-size: 0.9375rem;
-}
-
+/* Form */
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
-.form-group {
+.form-field {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
-.form-group label {
-  font-size: 0.875rem;
+.field-label {
+  font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .input-wrapper {
@@ -245,164 +357,193 @@ async function handleLogin() {
 
 .input-icon {
   position: absolute;
-  left: 1rem;
-  width: 20px;
-  height: 20px;
-  color: var(--text-muted);
+  left: 14px;
+  color: rgba(255, 255, 255, 0.4);
   pointer-events: none;
 }
 
-.form-group input {
+.form-input {
   width: 100%;
-  padding: 0.875rem 1rem 0.875rem 3rem;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 0.75rem;
-  font-size: 0.9375rem;
-  color: var(--text-primary);
-  transition: all 0.2s ease;
+  padding: 12px 14px 12px 44px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: white;
+  font-size: 14px;
+  transition: all 0.2s;
 }
 
-.form-group input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.form-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
 }
 
-.form-group input::placeholder {
-  color: var(--text-muted);
-}
-
-.form-group input:focus {
+.form-input:focus {
   outline: none;
-  border-color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(59, 130, 246, 0.5);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.form-group input:hover:not(:focus):not(:disabled) {
-  border-color: var(--border-hover);
+.form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.form-options {
+.form-input.pr-12 {
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 0.2s;
+}
+
+.password-toggle:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Form Actions */
+.form-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.875rem;
 }
 
-.checkbox-wrapper {
+.checkbox-label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: var(--text-secondary);
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
 }
 
-.checkbox-wrapper input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-primary);
-  cursor: pointer;
+.checkbox-custom {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.peer:checked ~ .checkbox-custom {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+}
+
+.peer:checked ~ .checkbox-custom::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 4px;
+  height: 8px;
+  border: solid #3b82f6;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 .forgot-link {
-  color: var(--color-primary);
+  font-size: 13px;
+  color: #3b82f6;
   text-decoration: none;
-  font-weight: 500;
-  transition: color 0.2s ease;
+  transition: color 0.2s;
 }
 
 .forgot-link:hover {
-  color: var(--color-primary-light);
-  text-decoration: underline;
+  color: #60a5fa;
 }
 
+/* Submit Button */
 .submit-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #3b82f6, #10b981);
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 0.875rem;
-  background: var(--gradient-primary);
-  color: #fff;
-  border: none;
-  border-radius: 0.75rem;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  box-shadow: var(--shadow-md);
+  gap: 8px;
 }
 
 .submit-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+}
+
+.submit-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .submit-btn:disabled {
-  opacity: 0.7;
+  opacity: 0.5;
   cursor: not-allowed;
   transform: none;
 }
 
-.btn-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.login-footer {
+/* Card Footer */
+.card-footer {
   text-align: center;
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 0.9375rem;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.login-footer a {
-  color: var(--color-primary);
+.card-footer p {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+}
+
+.register-link {
+  color: #3b82f6;
   text-decoration: none;
-  font-weight: 500;
-  transition: color 0.2s ease;
+  font-weight: 600;
+  transition: color 0.2s;
 }
 
-.login-footer a:hover {
-  color: var(--color-primary-light);
-  text-decoration: underline;
+.register-link:hover {
+  color: #60a5fa;
 }
 
+/* Copyright */
+.copyright {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 20px;
+}
+
+/* Responsive */
 @media (max-width: 640px) {
-  .login-container {
-    padding: 1rem;
+  .header {
+    padding: 12px 20px;
   }
 
-  .login-content {
-    padding: 2rem 1.5rem;
+  .main-content {
+    padding: 16px 20px 24px;
   }
 
-  .login-logo svg {
-    width: 40px;
-    height: 40px;
+  .login-card {
+    padding: 24px;
+    border-radius: 16px;
   }
 
-  .login-logo span {
-    font-size: 1.25rem;
-  }
-
-  .login-header h1 {
-    font-size: 1.5rem;
+  .card-title {
+    font-size: 20px;
   }
 }
 </style>

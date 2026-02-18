@@ -30,6 +30,7 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173")
 APP_NAME = os.getenv("APP_NAME", "RFTIP API")
 APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+SLOW_REQUEST_THRESHOLD_MS = int(os.getenv("SLOW_REQUEST_THRESHOLD_MS", "1000"))
 
 # MinIO Settings
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
@@ -42,10 +43,19 @@ MINIO_SECURE = os.getenv("MINIO_SECURE", "False").lower() == "true"
 REDIS_URL = os.getenv("REDIS_URL")
 
 # SMTP Settings
+SMTP_ENABLED = os.getenv("SMTP_ENABLED", "False").lower() == "true"
 SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_FROM = os.getenv("SMTP_FROM")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "RFTIP Team")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "True").lower() == "true"
+
+# Verification Code Settings
+VERIFICATION_CODE_LENGTH = int(os.getenv("VERIFICATION_CODE_LENGTH", "6"))
+VERIFICATION_CODE_EXPIRE_MINUTES = int(os.getenv("VERIFICATION_CODE_EXPIRE_MINUTES", "5"))
+LOG_VERIFICATION_CODE = os.getenv("LOG_VERIFICATION_CODE", "True").lower() == "true"
 
 
 def get_cors_origins() -> List[str]:
@@ -85,6 +95,7 @@ def get_settings():
         app_name=APP_NAME,
         app_version=APP_VERSION,
         debug=DEBUG,
+        slow_request_threshold_ms=SLOW_REQUEST_THRESHOLD_MS,
 
         # MinIO
         minio_endpoint=MINIO_ENDPOINT,
@@ -97,8 +108,17 @@ def get_settings():
         redis_url=REDIS_URL,
 
         # SMTP
+        smtp_enabled=SMTP_ENABLED,
         smtp_host=SMTP_HOST,
         smtp_port=SMTP_PORT,
         smtp_user=SMTP_USER,
         smtp_password=SMTP_PASSWORD,
+        smtp_from=SMTP_FROM,
+        smtp_from_name=SMTP_FROM_NAME,
+        smtp_use_tls=SMTP_USE_TLS,
+
+        # Verification Code
+        verification_code_length=VERIFICATION_CODE_LENGTH,
+        verification_code_expire_minutes=VERIFICATION_CODE_EXPIRE_MINUTES,
+        log_verification_code=LOG_VERIFICATION_CODE,
     )

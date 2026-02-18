@@ -23,7 +23,6 @@ from core.exceptions import (
     ServerException,
     DatabaseException,
     FileProcessingException,
-    ServiceException,
 )
 from core.logging import get_logger, log_error
 from core.config import get_settings

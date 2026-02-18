@@ -12,6 +12,8 @@ backend/htmlcov/
 backend/.DS_Store
 backend/.env
 
+
+
 # Environment files (keep .env.example but ignore .env)
 backend/.env
 frontend/.env.local
@@ -63,3 +65,7 @@ uploads/
 task_plan.md
 findings.md
 progress.md
+
+#前后端对话
+backend/express.md
+frontend/express.md

@@ -2,12 +2,13 @@
 认证路由 - 处理用户注册、登录、登出等操作
 """
 from datetime import timedelta
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from typing import Annotated, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Header, UploadFile, File, Form, Response, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from core.config import get_settings
+from core.config import get_settings, REDIS_URL
 from core.database import get_db
+from core.logging import logger
 from app.schemas.auth import (
     UserCreate,
     UserResponse,
@@ -17,6 +18,8 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     SendVerificationCodeRequest,
     SendVerificationCodeResponse,
+    AvatarUploadResponse,
+    TempAvatarUploadResponse,
 )
 from app.services import (
     create_user,
@@ -32,6 +35,8 @@ from app.services import (
 )
 from app.services.email_service import email_service
 from app.services.verification_service import verification_service
+from app.services.minio_service import minio_service
+from app.services.temp_avatar_service import temp_avatar_service
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
@@ -131,6 +136,89 @@ async def send_verification_code(
     )
 
 
+@router.post("/upload-temp-avatar", response_model=TempAvatarUploadResponse)
+async def upload_temp_avatar(
+    avatar: Annotated[UploadFile, File(description="头像文件")],
+    request: Request,
+):
+    """
+    上传临时头像（无需登录）
+
+    用于注册前的头像上传
+
+    - **avatar**: 头像文件（支持 jpg、png、gif 等图片格式）
+    - 文件大小限制：5MB
+    - 临时存储在 Redis，1 小时后自动过期
+    - IP 限流：每分钟最多 3 次
+
+    返回 temp_token，用于注册时传入
+    """
+    # 获取客户端 IP
+    client_ip = request.client.host if request.client else "unknown"
+
+    # IP 限流检查：每分钟最多 3 次
+    try:
+        import redis
+        redis_client = redis.from_url(REDIS_URL)
+        rate_limit_key = f"upload_limit:{client_ip}"
+
+        # 增加计数器
+        current_count = redis_client.incr(rate_limit_key)
+
+        # 第一次设置时，添加 60 秒过期时间
+        if current_count == 1:
+            redis_client.expire(rate_limit_key, 60)
+
+        # 检查是否超过限制
+        if current_count > 3:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="上传过于频繁，请稍后再试",
+            )
+
+    except ImportError:
+        # 如果没有 redis 库，跳过限流
+        pass
+    except Exception as e:
+        # Redis 连接失败时记录日志，但允许继续
+        logger.error(f"IP 限流检查失败: {e}")
+
+    # 验证文件类型
+    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+    if avatar.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件类型：{avatar.content_type}。支持的类型：jpg、png、gif、webp",
+        )
+
+    # 验证文件大小（5MB）
+    MAX_FILE_SIZE = 5 * 1024 * 1024
+    file_data = await avatar.read()
+    if len(file_data) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文件大小超过限制（最大 5MB）",
+        )
+
+    try:
+        # 保存到 Redis
+        temp_token = temp_avatar_service.save_temp_avatar(
+            file_data=file_data,
+            content_type=avatar.content_type or "image/jpeg",
+        )
+
+        return TempAvatarUploadResponse(
+            temp_token=temp_token,
+            message="临时头像上传成功，请在一小时内完成注册",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"临时头像上传失败：{str(e)}",
+        )
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserCreate,
@@ -145,6 +233,7 @@ async def register(
     - **verification_code**: 邮箱验证码（6位数字）
     - **full_name**: 全名（可选）
     - **phone**: 电话号码（可选）
+    - **temp_token**: 临时头像令牌（可选，需要先调用上传临时头像接口）
 
     注意：请先调用 /api/auth/send-verification-code 获取验证码
     """
@@ -171,7 +260,45 @@ async def register(
             detail="验证码错误或已过期",
         )
 
-    # 创建用户
+    # 处理临时头像
+    avatar_object_name = None
+    if user_data.temp_token:
+        # 从 Redis 获取临时头像
+        temp_avatar_data = temp_avatar_service.get_temp_avatar(user_data.temp_token)
+        if temp_avatar_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="临时头像不存在或已过期，请重新上传",
+            )
+
+        file_data, content_type = temp_avatar_data
+
+        # 先创建用户（需要 user_id）
+        user = create_user(db, user_data)
+
+        try:
+            # 上传到 MinIO
+            avatar_object_name = minio_service.upload_avatar(
+                file_data=file_data,
+                filename="avatar.jpg",
+                user_id=user.id,
+            )
+
+            # 更新用户头像
+            user.avatar_url = avatar_object_name
+            db.commit()
+            db.refresh(user)
+
+        except Exception as e:
+            # 如果头像上传失败，仍然注册成功，只是没有头像
+            logger.error(f"头像上传失败: {e}")
+
+        # 删除 Redis 中的临时头像
+        temp_avatar_service.delete_temp_avatar(user_data.temp_token)
+
+        return UserResponse.model_validate(user)
+
+    # 没有临时头像，直接创建用户
     user = create_user(db, user_data)
     return UserResponse.model_validate(user)
 
@@ -272,26 +399,172 @@ async def get_profile(
     return current_user
 
 
-@router.put("/profile", response_model=UserResponse)
-async def update_profile(
-    user_update: UserUpdate,
+@router.post("/upload-avatar", response_model=AvatarUploadResponse)
+async def upload_avatar(
+    avatar: Annotated[UploadFile, File(description="头像文件")],
     current_user: Annotated[UserResponse, Depends(get_current_active_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
     """
-    更新当前用户信息
+    上传用户头像
 
-    - **full_name**: 全名（可选）
-    - **phone**: 电话号码（可选）
-    - **avatar_url**: 头像URL（可选）
+    - **avatar**: 头像文件（支持 jpg、png、gif 等图片格式）
+    - 文件大小限制：5MB
+
+    返回 avatar_id，可用于注册或更新用户信息
     """
-    updated_user = update_user(db, current_user.id, user_update)
-    if not updated_user:
+    # 验证文件类型
+    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+    if avatar.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件类型：{avatar.content_type}。支持的类型：jpg、png、gif、webp",
+        )
+
+    # 验证文件大小（5MB）
+    MAX_FILE_SIZE = 5 * 1024 * 1024
+    file_data = await avatar.read()
+    if len(file_data) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文件大小超过限制（最大 5MB）",
+        )
+
+    try:
+        # 上传到 MinIO，获取 object_name
+        avatar_id = minio_service.upload_avatar(
+            file_data=file_data,
+            filename=avatar.filename or "avatar.jpg",
+            user_id=current_user.id,
+        )
+
+        return AvatarUploadResponse(
+            avatar_id=avatar_id,
+            message="头像上传成功",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"头像上传失败：{str(e)}",
+        )
+
+
+@router.get("/avatar/{user_id}")
+async def get_avatar(
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    获取用户头像
+
+    返回头像图片文件
+    """
+    # 获取用户信息
+    user = get_user_by_id(db, user_id)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在",
         )
-    return UserResponse.model_validate(updated_user)
+
+    if not user.avatar_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户未设置头像",
+        )
+
+    try:
+        # 从 MinIO 获取头像文件
+        file_data, content_type = minio_service.get_avatar(user.avatar_url)
+        return Response(content=file_data, media_type=content_type)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取头像失败：{str(e)}",
+        )
+
+
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    full_name: Annotated[Optional[str], Form()] = None,
+    phone: Annotated[Optional[str], Form()] = None,
+    avatar: Annotated[Optional[UploadFile], File()] = None,
+):
+    """
+    更新当前用户信息
+
+    请求方式：multipart/form-data
+
+    - **full_name**: 全名（可选）
+    - **phone**: 电话号码（可选）
+    - **avatar**: 头像文件（可选）
+
+    注意：
+    - 头像文件支持：jpg、png、gif、webp（最大 5MB）
+    - 上传新头像会自动删除旧头像
+    """
+    # 构建更新数据
+    update_data = {}
+    if full_name is not None:
+        update_data["full_name"] = full_name
+    if phone is not None:
+        update_data["phone"] = phone
+
+    # 处理头像上传
+    if avatar is not None:
+        # 验证文件类型
+        allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+        if avatar.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"不支持的文件类型：{avatar.content_type}",
+            )
+
+        # 验证文件大小（5MB）
+        MAX_FILE_SIZE = 5 * 1024 * 1024
+        file_data = await avatar.read()
+        if len(file_data) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="文件大小超过限制（最大 5MB）",
+            )
+
+        try:
+            # 删除旧头像（如果存在）
+            if current_user.avatar_url:
+                minio_service.delete_avatar(current_user.avatar_url)
+
+            # 上传新头像
+            avatar_id = minio_service.upload_avatar(
+                file_data=file_data,
+                filename=avatar.filename or "avatar.jpg",
+                user_id=current_user.id,
+            )
+            update_data["avatar_url"] = avatar_id
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"头像上传失败：{str(e)}",
+            )
+
+    # 执行更新
+    if update_data:
+        user_update = UserUpdate(**update_data)
+        updated_user = update_user(db, current_user.id, user_update)
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="用户不存在",
+            )
+        return UserResponse.model_validate(updated_user)
+
+    # 没有更新内容，返回原用户信息
+    return current_user
 
 
 @router.get("/login-logs", response_model=list[LoginLogResponse])

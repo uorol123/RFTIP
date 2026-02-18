@@ -52,6 +52,13 @@ export async function changePassword(data: { old_password: string; new_password:
   )
 }
 
+// 发送验证码
+export async function sendVerificationCode(email: string): Promise<{ message: string; email: string; expire_in: number }> {
+  return apiCall(() =>
+    apiClient.post<{ message: string; email: string; expire_in: number }>('/auth/send-verification-code', { email })
+  )
+}
+
 // 对象式导出（保持向后兼容）
 export const authApi = {
   login,
@@ -61,4 +68,5 @@ export const authApi = {
   updateProfile,
   getLoginLogs,
   changePassword,
+  sendVerificationCode,
 }

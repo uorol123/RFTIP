@@ -1,4 +1,7 @@
 @import './base.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* 清除默认限制，让页面占满全屏 */
 html,
@@ -11,4 +14,312 @@ body {
 #app {
   width: 100%;
   height: 100%;
+}
+
+/* ========================================
+   流体渐变背景动画 - 浅蓝/青/绿
+   ======================================== */
+
+/* 主流体渐变背景 */
+@keyframes fluid-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  75% {
+    background-position: 0% 100%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* 动态光晕脉动 */
+@keyframes aura-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1) translate(0, 0);
+  }
+  25% {
+    opacity: 0.6;
+    transform: scale(1.15) translate(20px, -10px);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.08) translate(-10px, 20px);
+  }
+  75% {
+    opacity: 0.55;
+    transform: scale(1.12) translate(-20px, -20px);
+  }
+}
+
+/* 多层光晕漂浮 */
+@keyframes glow-float-1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.15);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.92);
+  }
+}
+
+@keyframes glow-float-2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-40px, 30px) scale(1.2);
+  }
+  66% {
+    transform: translate(20px, -40px) scale(0.9);
+  }
+}
+
+@keyframes glow-float-3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(50px, 20px) scale(1.25);
+  }
+  66% {
+    transform: translate(-30px, -30px) scale(0.88);
+  }
+}
+
+/* 边框流光动画 */
+@keyframes border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* 文字闪烁 */
+@keyframes text-shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* ========================================
+   工具类 - 浅蓝/青/绿主题
+   ======================================== */
+
+/* 流体渐变背景 - 浅蓝青绿 */
+.bg-fluid-gradient {
+  background: linear-gradient(
+    -45deg,
+    #e0f7fa,
+    #b2ebf2,
+    #80deea,
+    #4dd0e1,
+    #26c6da,
+    #00bcd4,
+    #e0f7fa
+  );
+  background-size: 400% 400%;
+  animation: fluid-gradient 20s ease infinite;
+}
+
+/* 玻璃态效果 - 浅色主题 */
+.glass-light {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 8px 32px rgba(0, 184, 212, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* 玻璃态效果 - 发光边框 */
+.glass-glow-light {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 200, 180, 0.3);
+  box-shadow:
+    0 8px 32px rgba(0, 184, 212, 0.2),
+    0 0 60px rgba(77, 208, 225, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* 动态光晕 - 浅蓝青绿 */
+.aura-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  animation: aura-pulse 8s ease-in-out infinite;
+}
+
+.aura-glow-1 {
+  animation: glow-float-1 12s ease-in-out infinite;
+}
+
+.aura-glow-2 {
+  animation: glow-float-2 15s ease-in-out infinite;
+}
+
+.aura-glow-3 {
+  animation: glow-float-3 18s ease-in-out infinite;
+}
+
+/* 流光边框 */
+.border-flow {
+  position: relative;
+  background: linear-gradient(
+    90deg,
+    rgba(77, 208, 225, 0.4),
+    rgba(0, 200, 180, 0.4),
+    rgba(0, 230, 150, 0.4),
+    rgba(77, 208, 225, 0.4)
+  );
+  background-size: 300% 100%;
+  animation: border-flow 4s linear infinite;
+}
+
+/* 文字流光效果 */
+.text-shimmer {
+  background: linear-gradient(
+    90deg,
+    #00bcd4,
+    #00e676,
+    #4dd0e1,
+    #00bcd4
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 3s linear infinite;
+}
+
+/* 渐变文字 - 浅蓝青绿 */
+.text-gradient-tech {
+  background: linear-gradient(135deg, #00bcd4 0%, #00e676 50%, #4dd0e1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* 渐变按钮 */
+.btn-gradient-glow {
+  background: linear-gradient(135deg, #00bcd4, #00e676);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  box-shadow:
+    0 4px 15px rgba(0, 184, 212, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-gradient-glow:hover {
+  box-shadow:
+    0 6px 25px rgba(0, 184, 212, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.btn-gradient-glow::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.btn-gradient-glow:hover::before {
+  left: 100%;
+}
+
+/* 输入框样式 - 浅色主题 */
+.input-glass {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 200, 180, 0.2);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  color: #1a202c;
+}
+
+.input-glass:focus {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(0, 200, 180, 0.5);
+  box-shadow:
+    0 0 20px rgba(0, 184, 212, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.input-glass::placeholder {
+  color: #94a3b8;
+}
+
+/* 粒子效果 - 浅色 */
+.particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: rgba(0, 200, 180, 0.4);
+  border-radius: 50%;
+  animation: particle-float 10s linear infinite;
+}
+
+@keyframes particle-float {
+  0% {
+    transform: translateY(100vh) translateX(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  90% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-100vh) translateX(100px);
+    opacity: 0;
+  }
+}
+
+/* 文字颜色 */
+.text-primary {
+  color: #0d9488;
+}
+
+.text-secondary {
+  color: #0891b2;
+}
+
+.text-muted {
+  color: #64748b;
+}
+
+/* 深色文字在浅色背景上 */
+.text-dark {
+  color: #1e293b;
 }

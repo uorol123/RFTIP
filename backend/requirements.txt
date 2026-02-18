@@ -26,6 +26,7 @@ python-dotenv==1.0.1          # 从 .env 文件加载环境变量
 python-jose[cryptography]==3.3.0   # JWT Token 生成与验证
 passlib[bcrypt]==1.7.4             # 密码哈希加密
 python-multipart==0.0.12           # 表单数据解析（文件上传）
+email-validator==2.1.1             # Email 格式验证（Pydantic EmailStr 类型依赖）
 
 # --------------------
 # 缓存与消息队列

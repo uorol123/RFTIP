@@ -3,6 +3,7 @@ RFTIP 后端应用主入口
 
 RadarFusionTrack Intelligence Platform - Backend
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import get_settings
@@ -28,11 +29,25 @@ logger.info(f"Starting {settings.app_name} v{settings.app_version}")
 logger.info(f"Debug mode: {settings.debug}")
 logger.info(f"Environment: {'development' if settings.debug else 'production'}")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动时执行
+    logger.info("Creating database tables...")
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created successfully")
+    yield
+    # 关闭时执行
+    logger.info(f"Shutting down {settings.app_name}")
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
-    description="雷达轨迹监测与智能分析平台 API"
+    description="雷达轨迹监测与智能分析平台 API",
+    lifespan=lifespan,
 )
 
 # Register global exception handlers
@@ -52,20 +67,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时创建数据库表"""
-    logger.info("Creating database tables...")
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时清理资源"""
-    logger.info(f"Shutting down {settings.app_name}")
 
 
 @app.get("/")

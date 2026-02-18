@@ -18,6 +18,7 @@ class UserCreate(UserBase):
     """用户注册请求模型"""
     password: str = Field(..., min_length=6, max_length=50, description="密码")
     verification_code: str = Field(..., min_length=6, max_length=6, description="邮箱验证码")
+    temp_token: Optional[str] = Field(None, max_length=100, description="临时头像令牌")
 
 
 class SendVerificationCodeRequest(BaseModel):
@@ -30,6 +31,18 @@ class SendVerificationCodeResponse(BaseModel):
     message: str
     email: str
     expire_in: int  # 剩余秒数
+
+
+class AvatarUploadResponse(BaseModel):
+    """头像上传响应模型"""
+    avatar_id: str
+    message: str
+
+
+class TempAvatarUploadResponse(BaseModel):
+    """临时头像上传响应模型"""
+    temp_token: str
+    message: str
 
 
 class UserLogin(BaseModel):

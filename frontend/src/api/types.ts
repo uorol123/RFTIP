@@ -35,12 +35,15 @@ export interface RegisterRequest {
   username: string
   email: string
   password: string
+  verification_code: string
   full_name?: string
+  phone?: string
 }
 
 export interface LoginResponse {
   access_token: string
   token_type: string
+  expires_in: number
   user: User
 }
 
