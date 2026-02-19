@@ -1,21 +1,23 @@
 <template>
-  <div class="dashboard">
-    <div class="dashboard-header">
-      <div>
-        <h1 class="dashboard-title">欢迎回来，{{ user?.username || '用户' }}！</h1>
-        <p class="dashboard-subtitle">这是您的雷达轨迹分析控制台</p>
+  <div class="dashboard-page">
+    <AppHeader />
+    <div class="dashboard">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="dashboard-title">欢迎回来，{{ user?.username || '用户' }}！</h1>
+          <p class="dashboard-subtitle">这是您的雷达轨迹分析控制台</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-primary" @click="navigateToUpload">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            上传数据
+          </button>
+        </div>
       </div>
-      <div class="header-actions">
-        <button class="btn btn-primary" @click="navigateToUpload">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          上传数据
-        </button>
-      </div>
-    </div>
 
-    <div class="dashboard-content">
+      <div class="dashboard-content">
       <!-- 统计卡片 -->
       <div class="stats-grid">
         <div class="stat-card">
@@ -288,6 +290,7 @@
       </div>
     </div>
   </div>
+</div>
 </template>
 
 <script setup lang="ts">
@@ -295,6 +298,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import AppHeader from '@/components/AppHeader.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -407,6 +411,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.dashboard-page {
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
 .dashboard {
   padding: 1.5rem;
   max-width: 1400px;

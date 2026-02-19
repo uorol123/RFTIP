@@ -69,9 +69,11 @@ backend/
 - 文件删除
 
 ### 3. 轨迹数据处理模块
-- 轨迹数据解析入库
-- 多源参考模式（RANSAC 算法）
-- 单源盲测模式（卡尔曼滤波）
+- 轨迹数据解析入库（支持中英文列名）
+- **预处理管道**：速度/航向从位置计算，噪音过滤
+- **多源参考模式**（RANSAC 算法）：1秒时间窗口 + 0.12度位置阈值
+- **单源盲测模式**（卡尔曼滤波）：基于运动模型平滑
+- **可扩展算法接口**：支持动态注册新算法
 - 修正结果存储
 
 ### 4. AI 分析模块
@@ -97,7 +99,7 @@ backend/
 ## 快速开始
 
 > **推荐方式：使用 Docker 部署依赖服务**
-> 项目依赖 MySQL、Redis、MinIO 等服务，建议使用 Docker 快速搭建环境。详细说明请参考 [Docker 部署指南](./docker-deploy-guide.md)。
+> 项目依赖 MySQL、Redis、MinIO 等服务，建议使用 Docker 快速搭建环境。详细说明请参考 [Docker 部署指南](./docs/docker-deploy-guide.md)。
 
 ---
 
@@ -132,7 +134,7 @@ CREATE DATABASE rftip CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 docker run -d --name redis -p 6379:6379 redis
 ```
 
-详细说明见：[Docker 部署指南 - Redis](./docker-deploy-guide.md#redis-缓存数据库)
+详细说明见：[Docker 部署指南 - Redis](./docs/docker-deploy-guide.md#redis-缓存数据库)
 
 #### 3. MinIO 对象存储
 
@@ -148,7 +150,7 @@ docker run -d --name minio \
 
 访问控制台：http://localhost:9001
 
-详细说明见：[Docker 部署指南 - MinIO](./docker-deploy-guide.md#minio-对象存储)
+详细说明见：[Docker 部署指南 - MinIO](./docs/docker-deploy-guide.md#minio-对象存储)
 
 ---
 
@@ -326,17 +328,72 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 
 ## 核心算法说明
 
+### 重要变更说明
+
+**v2.0 重构更新**（基于真实数据分析）：
+
+1. **不使用原始速度/航向列**：原始数据中的 `speed` 和 `heading` 列存在数据质量问题（速度单位不明确、航向值0-5度非真实方位角），系统现在**完全从位置数据计算速度和航向**
+
+2. **时间窗口参数调整**：基于真实数据分析（95%分位数=1.000秒），同时观测时间窗口从5秒调整为**1秒**
+
+3. **位置匹配阈值**：采用**0.12度**（约13.3km）作为位置匹配阈值
+
+### 预处理管道
+
+```python
+# 速度计算（Haversine距离 + 时间差）
+def calculate_velocity(point1, point2):
+    distance = haversine_distance(point1['lat'], point1['lon'],
+                                  point2['lat'], point2['lon'])
+    time_diff = (point2['timestamp'] - point1['timestamp']).total_seconds()
+    speed_mps = distance / time_diff
+    speed_kmh = speed_mps * 3.6
+    heading = calculate_bearing(point1, point2)
+    return speed_mps, speed_kmh, heading
+```
+
+**噪音过滤规则**：
+- 最小速度：50 km/h（失速速度以上）
+- 最大速度：800 km/h（民航飞机最大速度）
+
 ### 多源参考模式（RANSAC）
 
-当多台雷达探测同一目标时，利用 RANSAC 算法剔除偏离群体的"坏点"站号，并计算该站的系统性偏差。
+当多台雷达探测同一目标时，利用 RANSAC 算法剔除偏离群体的"坏点"站号。
 
-**适用场景：** 大部分雷达可靠，需要识别并校准故障/低精度雷达。
+**同时观测匹配条件**：
+1. 时间差 ≤ 1秒
+2. 位置距离 ≤ 0.12度（约13.3km）
+3. 不同雷达站
+
+**适用场景**：大部分雷达可靠，需要识别并校准故障/低精度雷达。
 
 ### 单源盲测模式（卡尔曼滤波）
 
-采用卡尔曼滤波算法，基于物理运动模型（匀速/匀加速）对单站噪声数据进行预测与修正。
+采用卡尔曼滤波算法，基于物理运动模型（匀速）对单站噪声数据进行预测与修正。
 
-**适用场景：** 不确定可靠性，需要获得平滑连续的飞行轨迹。
+**状态向量**：`[lat, lng, alt, velocity_lat, velocity_lng, velocity_alt]`
+
+**适用场景**：不确定可靠性，需要获得平滑连续的飞行轨迹。
+
+### 可扩展算法接口
+
+```python
+# 支持动态注册新算法
+AlgorithmFactory.register_algorithm('particle', ParticleFilterAlgorithm)
+
+# 使用算法
+algorithm = AlgorithmFactory.create_algorithm('particle', num_particles=200)
+result = algorithm.correct(observations)
+```
+
+### 数据分析结果
+
+| 参数 | 分析结果 | 选择依据 |
+|------|---------|----------|
+| TIME_WINDOW_MATCH | 95%分位数 = 1.000秒 | 选择1秒窗口 |
+| POSITION_THRESHOLD | 98%观测 < 0.12度 | 参考文档推荐值 |
+| MAX_SPEED_KMH | 民航飞机巡航速度 | 800 km/h |
+| MIN_SPEED_KMH | 失速速度以上 | 50 km/h |
 
 ---
 
@@ -374,7 +431,7 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 配置文件位于 `.env` 文件中，在项目一级目录，仓库提供一个示例文件 `.env.example`
 
 ### 配置参考
-该项目使用了mysql，redis，minio等第三方工具，建议使用docker进行环境搭建，可以参考docker-deploy-guide.md
+该项目使用了mysql，redis，minio等第三方工具，建议使用docker进行环境搭建，可以参考docs/docker-deploy-guide.md
 
 ### 邮箱配置说明
 根据你使用的邮箱，按以下步骤获取授权码：

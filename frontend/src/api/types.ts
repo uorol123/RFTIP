@@ -55,7 +55,21 @@ export interface LoginLog {
   ip_address: string
   user_agent: string
   login_time: string
+  logout_time?: string
   status: 'success' | 'failed'
+  failure_reason?: string
+}
+
+// Avatar Upload Types
+export interface UploadAvatarResponse {
+  avatar_id: string
+  message: string
+}
+
+export interface UpdateProfileRequest {
+  full_name?: string
+  phone?: string
+  avatar?: File
 }
 
 // File Types

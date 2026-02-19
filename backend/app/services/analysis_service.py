@@ -70,59 +70,128 @@ class TrajectoryFeatureExtractor:
 
     @staticmethod
     def extract_velocity_features(tracks: List[FlightTrackCorrected]) -> List[TrajectoryFeature]:
-        """提取速度特征"""
+        """
+        提取速度特征
+
+        注意：由于原始数据中的 speed/heading 字段存在问题，
+        这里从位置数据计算实际速度
+        """
+        import math
+
         features = []
 
-        speeds = [t.speed for t in tracks if t.speed is not None]
+        if len(tracks) < 2:
+            return features
 
-        if not speeds:
+        # 从位置变化计算速度
+        calculated_speeds = []
+        for i in range(len(tracks) - 1):
+            curr = tracks[i]
+            next_track = tracks[i + 1]
+
+            # 计算距离（米）- 使用 Haversine 公式
+            lat1, lon1 = math.radians(curr.latitude), math.radians(curr.longitude)
+            lat2, lon2 = math.radians(next_track.latitude), math.radians(next_track.longitude)
+
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+
+            a = (math.sin(dlat / 2) ** 2 +
+                 math.cos(lat1) * math.cos(lat2) *
+                 math.sin(dlon / 2) ** 2)
+
+            c = 2 * math.asin(math.sqrt(a))
+            distance = 6371000 * c  # 地球半径 6371km
+
+            # 计算时间差（秒）
+            time_diff = (next_track.timestamp - curr.timestamp).total_seconds()
+
+            if time_diff > 0:
+                speed = distance / time_diff  # 米/秒
+                calculated_speeds.append(speed)
+
+        if not calculated_speeds:
             return features
 
         features.append(TrajectoryFeature(
             feature_name="avg_speed",
-            feature_value=float(np.mean(speeds)),
+            feature_value=float(np.mean(calculated_speeds)),
             confidence=1.0,
-            description="平均速度"
+            description="平均速度（米/秒，从位置计算）"
         ))
 
         features.append(TrajectoryFeature(
             feature_name="max_speed",
-            feature_value=float(max(speeds)),
+            feature_value=float(max(calculated_speeds)),
             confidence=1.0,
-            description="最大速度"
+            description="最大速度（米/秒，从位置计算）"
         ))
 
         features.append(TrajectoryFeature(
             feature_name="speed_variance",
-            feature_value=float(np.var(speeds)),
+            feature_value=float(np.var(calculated_speeds)),
             confidence=1.0,
-            description="速度方差"
+            description="速度方差（从位置计算）"
         ))
 
         return features
 
     @staticmethod
     def extract_movement_features(tracks: List[FlightTrackCorrected]) -> List[TrajectoryFeature]:
-        """提取运动特征"""
+        """
+        提取运动特征
+
+        注意：由于原始数据中的 heading 字段存在问题，
+        这里从位置数据计算实际航向
+        """
+        import math
+
         features = []
 
         if len(tracks) < 2:
             return features
 
-        # 计算航向变化
-        headings = [t.heading for t in tracks if t.heading is not None]
-        if len(headings) > 1:
+        # 从位置变化计算航向
+        calculated_headings = []
+
+        for i in range(len(tracks) - 1):
+            curr = tracks[i]
+            next_track = tracks[i + 1]
+
+            # 计算方位角（航向）
+            lat1 = math.radians(curr.latitude)
+            lat2 = math.radians(next_track.latitude)
+            dlon = math.radians(next_track.longitude - curr.longitude)
+
+            y = math.sin(dlon) * math.cos(lat2)
+            x = (math.cos(lat1) * math.sin(lat2) -
+                 math.sin(lat1) * math.cos(lat2) * math.cos(dlon))
+
+            bearing = math.atan2(y, x)
+            bearing = math.degrees(bearing)
+            bearing = (bearing + 360) % 360
+
+            calculated_headings.append(bearing)
+
+        if len(calculated_headings) > 1:
+            # 计算航向变化
             heading_changes = [
-                abs(headings[i + 1] - headings[i]) % 360
-                for i in range(len(headings) - 1)
+                abs(calculated_headings[i + 1] - calculated_headings[i])
+                for i in range(len(calculated_headings) - 1)
             ]
+            # 处理跨越0/360度的情况
+            heading_changes = [
+                h if h <= 180 else 360 - h
+                for h in heading_changes
+            ]
+
             avg_heading_change = np.mean(heading_changes)
 
             features.append(TrajectoryFeature(
                 feature_name="avg_heading_change",
                 feature_value=float(avg_heading_change),
                 confidence=1.0,
-                description="平均航向变化"
+                description="平均航向变化（度，从位置计算）"
             ))
 
         # 计算运动模式
@@ -313,9 +382,9 @@ def assess_risk_level(tracks: List[FlightTrackCorrected], features: List[Traject
     if outlier_feature and outlier_feature.feature_value > 0.3:
         risk_score += 2
 
-    # 检查速度异常
+    # 检查速度异常 (阈值调整为更合理的值: 飞机速度方差 > 2500 m/s²)
     speed_variance = next((f for f in features if f.feature_name == "speed_variance"), None)
-    if speed_variance and speed_variance.feature_value > 100:
+    if speed_variance and speed_variance.feature_value > 2500:
         risk_score += 1
 
     # 检查高度变化

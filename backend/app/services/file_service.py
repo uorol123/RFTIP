@@ -20,6 +20,30 @@ settings = get_settings()
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 FILE_TYPE_MAP = {".csv": "csv", ".xlsx": "excel", ".xls": "excel"}
 
+# 中文列名到英文列名的映射
+COLUMN_NAME_MAPPING = {
+    # 中文 -> 英文
+    "批号": "track_id",           # 飞机ID
+    "日期": "date",               # 日期 YYYYMMDD
+    "入库时间": "timestamp",      # 完整时间戳（优先使用）
+    "纬度": "latitude",
+    "经度": "longitude",
+    "高度": "altitude",
+    "速度": "speed",
+    "航向": "heading",
+    "站号": "radar_station_id",   # 雷达站ID
+    # 英文 -> 英文（兼容原有格式）
+    "track_id": "track_id",
+    "timestamp": "timestamp",
+    "date": "date",
+    "latitude": "latitude",
+    "longitude": "longitude",
+    "altitude": "altitude",
+    "speed": "speed",
+    "heading": "heading",
+    "radar_station_id": "radar_station_id",
+}
+
 
 def get_file_hash(file_content: bytes) -> str:
     """计算文件哈希值（MD5）"""
@@ -115,29 +139,169 @@ def parse_excel_file(file_path: str) -> pd.DataFrame:
         )
 
 
+def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    标准化列名：将中文列名映射为英文列名
+
+    支持的中文列名：
+    - 批号 -> track_id（飞机ID）
+    - 站号 -> radar_station_id（雷达站ID）
+    - 入库时间 -> timestamp（完整时间戳，优先使用）
+    - 日期 -> date（YYYYMMDD格式，仅日期）
+    - 纬度 -> latitude
+    - 经度 -> longitude
+    - 高度 -> altitude
+    - 速度 -> speed
+    - 航向 -> heading
+    """
+    # 创建列名映射字典（只映射存在的列）
+    rename_mapping = {}
+    for col in df.columns:
+        col_stripped = str(col).strip()
+        if col_stripped in COLUMN_NAME_MAPPING:
+            rename_mapping[col] = COLUMN_NAME_MAPPING[col_stripped]
+
+    # 重命名列
+    if rename_mapping:
+        df = df.rename(columns=rename_mapping)
+
+    return df
+
+
 def validate_track_data(df: pd.DataFrame) -> List[str]:
-    """验证轨迹数据格式"""
-    required_columns = ["track_id", "timestamp", "latitude", "longitude"]
-    missing_columns = [col for col in required_columns if col not in df.columns]
+    """
+    验证轨迹数据格式
+
+    支持中英文列名：
+    - 必需列（中文）: 批号, 入库时间/日期, 纬度, 经度
+    - 必需列（英文）: track_id, timestamp, latitude, longitude
+
+    字段说明：
+    - 批号: 飞机ID (track_id)
+    - 站号: 雷达站ID (radar_station_id)
+    - 入库时间: 完整时间戳 (timestamp，优先使用)
+    - 日期: 日期 YYYYMMDD (仅日期，作为备用)
+    """
+    # 先标准化列名
+    df_normalized = normalize_column_names(df.copy())
+
+    # 检查必需列（使用标准化后的列名）
+    # timestamp 可以是 "入库时间" 或 "日期"
+    required_columns = ["track_id", "latitude", "longitude"]
+    timestamp_sources = ["timestamp", "date", "日期"]  # 至少需要一个时间列
+    missing_columns = []
+
+    for req_col in required_columns:
+        # 检查英文列名
+        if req_col in df_normalized.columns:
+            continue
+        # 检查对应的中文列名
+        chinese_col = next((k for k, v in COLUMN_NAME_MAPPING.items() if v == req_col), None)
+        if chinese_col and chinese_col in df.columns:
+            continue
+        missing_columns.append(f"{req_col} ({chinese_col or 'N/A'})")
+
+    # 检查是否至少有一个时间列
+    has_timestamp = any(col in df_normalized.columns or col in df.columns for col in timestamp_sources)
+    if not has_timestamp:
+        missing_columns.append("timestamp (入库时间/日期)")
 
     if missing_columns:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"缺少必需的列: {', '.join(missing_columns)}。必需列: {', '.join(required_columns)}",
+            detail=f"缺少必需的列: {', '.join(missing_columns)}。\n"
+                   f"支持中英文列名：\n"
+                   f"  - 批号/track_id（飞机ID）\n"
+                   f"  - 入库时间/timestamp（完整时间戳）\n"
+                   f"  - 日期/date（YYYYMMDD，可替代入库时间）\n"
+                   f"  - 纬度/latitude（纬度）\n"
+                   f"  - 经度/longitude（经度）",
         )
 
     # 验证数据类型和范围
     errors = []
-    if not df["latitude"].between(-90, 90).all():
-        errors.append("纬度值必须在 -90 到 90 之间")
-    if not df["longitude"].between(-180, 180).all():
-        errors.append("经度值必须在 -180 到 180 之间")
+
+    # 获取纬度列（可能是中文或英文）
+    lat_col = "latitude" if "latitude" in df_normalized.columns else "纬度"
+    if lat_col in df_normalized.columns:
+        if not df_normalized[lat_col].between(-90, 90).all():
+            errors.append("纬度值必须在 -90 到 90 之间")
+
+    # 获取经度列
+    lng_col = "longitude" if "longitude" in df_normalized.columns else "经度"
+    if lng_col in df_normalized.columns:
+        if not df_normalized[lng_col].between(-180, 180).all():
+            errors.append("经度值必须在 -180 到 180 之间")
 
     return errors
 
 
+def parse_timestamp(value, fallback_date=None) -> datetime:
+    """
+    解析时间戳，支持多种格式
+
+    支持格式：
+    - 完整时间戳: 2025-11-25 22:00:00.500000
+    - 标准 datetime 格式: 2025-11-25 22:00:00
+    - 整数日期格式: 20251125 (fallback_date)
+
+    Args:
+        value: 主要时间值（入库时间）
+        fallback_date: 备用日期值（日期字段，YYYYMMDD格式）
+    """
+    # 优先使用完整时间戳
+    if pd.notna(value):
+        value_str = str(value).strip()
+        try:
+            # 尝试标准解析
+            return pd.to_datetime(value_str)
+        except:
+            pass
+
+    # 如果没有完整时间戳，尝试使用备用日期
+    if pd.notna(fallback_date):
+        fallback_str = str(fallback_date).strip()
+        if fallback_str.isdigit() and len(fallback_str) == 8:
+            year = fallback_str[:4]
+            month = fallback_str[4:6]
+            day = fallback_str[6:8]
+            return pd.to_datetime(f"{year}-{month}-{day}")
+
+    raise ValueError("无法解析时间：需要有效的入库时间或日期")
+
+
 def process_file_data(file_id: int, db: Session) -> dict:
-    """处理文件数据并导入到数据库"""
+    """
+    处理文件数据并导入到数据库
+
+    支持中英文列名：
+
+    中文列名:
+    - 批号: 飞机ID (track_id)
+    - 站号: 雷达站ID (radar_station_id)
+    - 入库时间: 完整时间戳，优先使用 (timestamp)
+    - 日期: 日期 YYYYMMDD，作为备用 (date)
+    - 纬度: 纬度 (latitude)
+    - 经度: 经度 (longitude)
+    - 高度: 高度米 (altitude)
+    - 速度: 速度 (speed)
+    - 航向: 航向度 (heading)
+
+    英文列名:
+    - track_id: 飞机ID
+    - radar_station_id: 雷达站ID
+    - timestamp: 完整时间戳
+    - date: 日期 (备用)
+    - latitude: 纬度
+    - longitude: 经度
+    - altitude: 高度
+    - speed: 速度
+    - heading: 航向
+
+    时间戳解析规则:
+    1. 优先使用 "入库时间/timestamp" (完整时间戳)
+    2. 如果没有，使用 "日期/date" (YYYYMMDD 格式)
+    """
     db_file = db.query(DataFile).filter(DataFile.id == file_id).first()
     if not db_file:
         raise HTTPException(
@@ -156,21 +320,30 @@ def process_file_data(file_id: int, db: Session) -> dict:
         else:
             df = parse_excel_file(db_file.file_path)
 
+        # 标准化列名（中文 -> 英文）
+        df = normalize_column_names(df)
+
         # 验证数据
         validate_track_data(df)
 
         # 导入数据
         row_count = 0
         for _, row in df.iterrows():
+            # 解析时间戳（优先使用入库时间，fallback 到日期）
+            timestamp = parse_timestamp(
+                value=row.get("timestamp"),       # 入库时间（完整时间戳）
+                fallback_date=row.get("date")     # 日期（YYYYMMDD）
+            )
+
             track_point = FlightTrackRaw(
                 file_id=file_id,
-                track_id=str(row["track_id"]),
-                timestamp=pd.to_datetime(row["timestamp"]),
-                latitude=float(row["latitude"]),
-                longitude=float(row["longitude"]),
-                altitude=float(row.get("altitude", 0)) if pd.notna(row.get("altitude")) else None,
-                speed=float(row.get("speed", 0)) if pd.notna(row.get("speed")) else None,
-                heading=float(row.get("heading", 0)) if pd.notna(row.get("heading")) else None,
+                track_id=str(row.get("track_id")),
+                timestamp=timestamp,
+                latitude=float(row.get("latitude")),
+                longitude=float(row.get("longitude")),
+                altitude=float(row.get("altitude") or 0) if pd.notna(row.get("altitude")) else None,
+                speed=float(row.get("speed") or 0) if pd.notna(row.get("speed")) else None,
+                heading=float(row.get("heading") or 0) if pd.notna(row.get("heading")) else None,
                 raw_data=json.dumps(row.to_dict()),
             )
             db.add(track_point)

@@ -7,6 +7,7 @@ import type {
   LoginResponse,
   RegisterRequest,
   LoginLog,
+  UploadAvatarResponse,
 } from './types'
 
 // 函数式导出
@@ -38,9 +39,18 @@ export async function getProfile(): Promise<User> {
   )
 }
 
-export async function updateProfile(data: Partial<User>): Promise<User> {
+export async function updateProfile(data: {
+  full_name?: string
+  phone?: string
+  avatar?: File
+}): Promise<User> {
+  const formData = new FormData()
+  if (data.full_name !== undefined) formData.append('full_name', data.full_name)
+  if (data.phone !== undefined) formData.append('phone', data.phone)
+  if (data.avatar !== undefined) formData.append('avatar', data.avatar)
+
   return apiCall(() =>
-    apiClient.put<User>('/auth/profile', data)
+    apiClient.put<User>('/auth/profile', formData)
   )
 }
 
@@ -56,13 +66,32 @@ export async function changePassword(data: { old_password: string; new_password:
   )
 }
 
-// 上传临时头像
+// 上传临时头像（注册时使用）
 export async function uploadTempAvatar(file: File): Promise<{ temp_token: string; message: string }> {
   const formData = new FormData()
   formData.append('avatar', file)
 
   return apiCall(() =>
     apiClient.post<{ temp_token: string; message: string }>('/auth/upload-temp-avatar', formData)
+  )
+}
+
+// 上传头像（登录后使用）
+export async function uploadAvatar(file: File): Promise<UploadAvatarResponse> {
+  const formData = new FormData()
+  formData.append('avatar', file)
+
+  return apiCall(() =>
+    apiClient.post<UploadAvatarResponse>('/auth/upload-avatar', formData)
+  )
+}
+
+// 获取用户头像图片
+export async function getUserAvatar(userId: number): Promise<Blob> {
+  return apiCall(() =>
+    apiClient.get<Blob>(`/auth/avatar/${userId}`, {
+      responseType: 'blob',
+    })
   )
 }
 
@@ -84,4 +113,6 @@ export const authApi = {
   changePassword,
   sendVerificationCode,
   uploadTempAvatar,
+  uploadAvatar,
+  getUserAvatar,
 }
