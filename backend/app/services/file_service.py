@@ -1,20 +1,25 @@
 """
 文件管理服务 - 处理文件上传、解析、存储和删除
 """
-import os
 import hashlib
 import json
+import os
 import pandas as pd
 from datetime import datetime
 from typing import Optional, List
-from fastapi import UploadFile, HTTPException, status
+from fastapi import UploadFile
+from sqlalchemy import insert
 from sqlalchemy.orm import Session
-from core.config import get_settings
+
 from app.models.data_file import DataFile
 from app.models.flight_track import FlightTrackRaw
 from app.schemas.file import DataFileResponse, FileUploadResponse
+from app.services.minio_service import minio_service
+from core.config import get_settings
+from core.logging import get_logger
 
 settings = get_settings()
+logger = get_logger(__name__)
 
 # 支持的文件类型
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
@@ -55,39 +60,53 @@ def get_file_extension(filename: str) -> str:
     return os.path.splitext(filename)[1].lower()
 
 
-async def save_uploaded_file(file: UploadFile, user_id: int, db: Session) -> FileUploadResponse:
-    """保存上传的文件"""
+async def save_uploaded_file(
+    file: UploadFile,
+    user_id: int,
+    db: Session,
+    category: str = "trajectory"
+) -> FileUploadResponse:
+    """保存上传的文件到 MinIO"""
+    import time
+    total_start = time.time()
+
     # 验证文件类型
     file_ext = get_file_extension(file.filename)
     if file_ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件类型。支持的类型: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
+        raise ValueError(f"不支持的文件类型。支持的类型: {', '.join(ALLOWED_EXTENSIONS)}")
 
     # 读取文件内容
+    read_start = time.time()
     file_content = await file.read()
+    read_elapsed = time.time() - read_start
+    logger.info(f"文件读取耗时: {read_elapsed:.3f}s, 大小: {len(file_content)} bytes")
+
     file_size = len(file_content)
     file_hash = get_file_hash(file_content)
 
-    # 创建存储目录
-    upload_dir = "uploads"
-    os.makedirs(upload_dir, exist_ok=True)
+    # 确定 MIME 类型
+    content_type_map = {
+        ".csv": "text/csv",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xls": "application/vnd.ms-excel",
+    }
+    content_type = content_type_map.get(file_ext, "application/octet-stream")
 
-    # 生成唯一文件名
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    safe_filename = f"{user_id}_{timestamp}_{file_hash[:8]}{file_ext}"
-    file_path = os.path.join(upload_dir, safe_filename)
-
-    # 保存文件
-    with open(file_path, "wb") as f:
-        f.write(file_content)
+    # 上传到 MinIO（异步执行，不阻塞事件循环）
+    minio_object_name, minio_url = await minio_service.upload_data_file_async(
+        file_data=file_content,
+        filename=file.filename,
+        content_type=content_type,
+        folder="trajectory" if category == "trajectory" else "radar_station",
+        prefix=f"{user_id}_",
+    )
 
     # 创建数据库记录
+    db_start = time.time()
     db_file = DataFile(
         user_id=user_id,
         file_name=file.filename,
-        file_path=file_path,
+        file_path=minio_object_name,  # 存储 MinIO 对象名称
         file_size=file_size,
         file_type=FILE_TYPE_MAP[file_ext],
         file_format=file_ext[1:],
@@ -97,46 +116,62 @@ async def save_uploaded_file(file: UploadFile, user_id: int, db: Session) -> Fil
     db.add(db_file)
     db.commit()
     db.refresh(db_file)
+    db_elapsed = time.time() - db_start
+    logger.info(f"数据库操作耗时: {db_elapsed:.3f}s")
+
+    total_elapsed = time.time() - total_start
+    logger.info(f"上传接口总耗时: {total_elapsed:.3f}s")
 
     return FileUploadResponse(
         file_id=db_file.id,
         file_name=db_file.file_name,
         status=db_file.status,
-        message="文件上传成功，等待处理",
+        file_size=db_file.file_size,
+        category=category,
+        message="文件上传成功，正在处理",
     )
 
 
-def parse_csv_file(file_path: str) -> pd.DataFrame:
-    """解析 CSV 文件"""
-    try:
-        # 尝试不同的编码
-        for encoding in ["utf-8", "gbk", "gb2312", "latin1"]:
-            try:
-                df = pd.read_csv(file_path, encoding=encoding)
+def parse_csv_file(file_content: bytes) -> pd.DataFrame:
+    """解析 CSV 文件内容"""
+    import io
+
+    # 尝试不同的编码
+    encodings = ["utf-8", "utf-8-sig", "gbk", "gb2312", "gb18030", "latin1", "cp1252", "iso-8859-1"]
+    last_error = None
+
+    for encoding in encodings:
+        try:
+            df = pd.read_csv(io.BytesIO(file_content), encoding=encoding)
+            # 验证数据是否有效（至少有一列）
+            if len(df.columns) > 0:
+                logger.info(f"CSV 文件解析成功，使用编码: {encoding}")
                 return df
-            except UnicodeDecodeError:
-                continue
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无法解析文件编码",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"CSV 解析错误: {str(e)}",
-        )
+        except (UnicodeDecodeError, UnicodeError) as e:
+            last_error = e
+            continue
+        except Exception as e:
+            # 如果是编码以外的问题，直接抛出
+            if "encoding" not in str(e).lower():
+                raise ValueError(f"CSV 解析错误: {str(e)}")
+            last_error = e
+            continue
+
+    # 所有编码都失败
+    raise ValueError(f"无法解析文件编码，尝试过的编码: {', '.join(encodings)}。最后错误: {last_error}")
 
 
-def parse_excel_file(file_path: str) -> pd.DataFrame:
-    """解析 Excel 文件"""
+def parse_excel_file(file_content: bytes) -> pd.DataFrame:
+    """解析 Excel 文件内容"""
     try:
-        df = pd.read_excel(file_path)
+        df = pd.read_excel(file_content)
+        # 验证数据是否有效
+        if len(df.columns) == 0:
+            raise ValueError("Excel 文件没有可读取的列")
+        logger.info(f"Excel 文件解析成功，共 {len(df)} 行, {len(df.columns)} 列")
         return df
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Excel 解析错误: {str(e)}",
-        )
+        raise ValueError(f"Excel 解析错误: {str(e)}")
 
 
 def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
@@ -207,15 +242,14 @@ def validate_track_data(df: pd.DataFrame) -> List[str]:
         missing_columns.append("timestamp (入库时间/日期)")
 
     if missing_columns:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"缺少必需的列: {', '.join(missing_columns)}。\n"
-                   f"支持中英文列名：\n"
-                   f"  - 批号/track_id（飞机ID）\n"
-                   f"  - 入库时间/timestamp（完整时间戳）\n"
-                   f"  - 日期/date（YYYYMMDD，可替代入库时间）\n"
-                   f"  - 纬度/latitude（纬度）\n"
-                   f"  - 经度/longitude（经度）",
+        raise ValueError(
+            f"缺少必需的列: {', '.join(missing_columns)}。\n"
+            f"支持中英文列名：\n"
+            f"  - 批号/track_id（飞机ID）\n"
+            f"  - 入库时间/timestamp（完整时间戳）\n"
+            f"  - 日期/date（YYYYMMDD，可替代入库时间）\n"
+            f"  - 纬度/latitude（纬度）\n"
+            f"  - 经度/longitude（经度）",
         )
 
     # 验证数据类型和范围
@@ -255,7 +289,7 @@ def parse_timestamp(value, fallback_date=None) -> datetime:
         try:
             # 尝试标准解析
             return pd.to_datetime(value_str)
-        except:
+        except Exception:
             pass
 
     # 如果没有完整时间戳，尝试使用备用日期
@@ -265,12 +299,15 @@ def parse_timestamp(value, fallback_date=None) -> datetime:
             year = fallback_str[:4]
             month = fallback_str[4:6]
             day = fallback_str[6:8]
-            return pd.to_datetime(f"{year}-{month}-{day}")
+            try:
+                return pd.to_datetime(f"{year}-{month}-{day}")
+            except Exception as e:
+                raise ValueError(f"无法解析日期 {fallback_str}: {e}")
 
-    raise ValueError("无法解析时间：需要有效的入库时间或日期")
+    raise ValueError(f"无法解析时间：value={value}, fallback_date={fallback_date}")
 
 
-def process_file_data(file_id: int, db: Session) -> dict:
+def process_file_data(file_id: int, db: Session, websocket_manager=None, loop=None) -> dict:
     """
     处理文件数据并导入到数据库
 
@@ -302,23 +339,65 @@ def process_file_data(file_id: int, db: Session) -> dict:
     1. 优先使用 "入库时间/timestamp" (完整时间戳)
     2. 如果没有，使用 "日期/date" (YYYYMMDD 格式)
     """
+    import asyncio
+
+    def send_ws_notification(data):
+        """发送WebSocket通知（线程安全）"""
+        if websocket_manager and loop:
+            asyncio.run_coroutine_threadsafe(
+                websocket_manager.broadcast_to_file(file_id, data),
+                loop
+            )
+
     db_file = db.query(DataFile).filter(DataFile.id == file_id).first()
     if not db_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="文件不存在",
-        )
+        raise ValueError(f"文件不存在: file_id={file_id}")
 
     try:
         # 更新状态为处理中
         db_file.status = "processing"
         db.commit()
 
+        # 通知：开始处理
+        send_ws_notification({
+            "type": "progress",
+            "file_id": file_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "status": "processing",
+                "progress": 10.0,
+                "stage": "解析中",
+                "processed_rows": 0,
+                "total_rows": 0,
+                "message": "正在解析文件..."
+            }
+        })
+
+        # 从 MinIO 下载文件内容
+        file_content = minio_service.download_file(db_file.file_path)
+
         # 解析文件
         if db_file.file_type == "csv":
-            df = parse_csv_file(db_file.file_path)
+            df = parse_csv_file(file_content)
         else:
-            df = parse_excel_file(db_file.file_path)
+            df = parse_excel_file(file_content)
+
+        total_rows = len(df)
+
+        # 通知：解析完成，开始预处理
+        send_ws_notification({
+                "type": "progress",
+                "file_id": file_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "status": "processing",
+                    "progress": 30.0,
+                    "stage": "预处理中",
+                    "processed_rows": 0,
+                    "total_rows": total_rows,
+                    "message": "正在预处理数据..."
+                }
+        })
 
         # 标准化列名（中文 -> 英文）
         df = normalize_column_names(df)
@@ -326,28 +405,62 @@ def process_file_data(file_id: int, db: Session) -> dict:
         # 验证数据
         validate_track_data(df)
 
-        # 导入数据
+        # 导入数据 - 使用批量插入优化性能
+        from sqlalchemy import insert
+
+        batch_size = 2000  # 每批插入数量
         row_count = 0
-        for _, row in df.iterrows():
+        batch_data = []
+
+        # 将 DataFrame 转换为字典列表（比 iterrows 快得多）
+        records = df.to_dict('records')
+
+        for idx, row in enumerate(records):
             # 解析时间戳（优先使用入库时间，fallback 到日期）
             timestamp = parse_timestamp(
-                value=row.get("timestamp"),       # 入库时间（完整时间戳）
-                fallback_date=row.get("date")     # 日期（YYYYMMDD）
+                value=row.get("timestamp"),
+                fallback_date=row.get("date")
             )
 
-            track_point = FlightTrackRaw(
-                file_id=file_id,
-                track_id=str(row.get("track_id")),
-                timestamp=timestamp,
-                latitude=float(row.get("latitude")),
-                longitude=float(row.get("longitude")),
-                altitude=float(row.get("altitude") or 0) if pd.notna(row.get("altitude")) else None,
-                speed=float(row.get("speed") or 0) if pd.notna(row.get("speed")) else None,
-                heading=float(row.get("heading") or 0) if pd.notna(row.get("heading")) else None,
-                raw_data=json.dumps(row.to_dict()),
-            )
-            db.add(track_point)
+            # 构建插入数据字典
+            track_data = {
+                "file_id": file_id,
+                "track_id": str(row.get("track_id")),
+                "timestamp": timestamp,
+                "latitude": float(row.get("latitude")),
+                "longitude": float(row.get("longitude")),
+                "altitude": float(row.get("altitude") or 0) if pd.notna(row.get("altitude")) else None,
+                "speed": float(row.get("speed") or 0) if pd.notna(row.get("speed")) else None,
+                "heading": float(row.get("heading") or 0) if pd.notna(row.get("heading")) else None,
+                "raw_data": json.dumps(row),
+            }
+            batch_data.append(track_data)
             row_count += 1
+
+            # 批量插入
+            if len(batch_data) >= batch_size:
+                db.execute(insert(FlightTrackRaw).values(batch_data))
+                batch_data = []
+
+                # 每批发送一次进度更新
+                progress = 30.0 + (row_count / total_rows * 50)
+                send_ws_notification({
+                    "type": "progress",
+                    "file_id": file_id,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "data": {
+                        "status": "processing",
+                        "progress": progress,
+                        "stage": "存储中",
+                        "processed_rows": row_count,
+                        "total_rows": total_rows,
+                        "message": f"正在存储数据... ({row_count}/{total_rows})"
+                    }
+                })
+
+        # 插入剩余数据
+        if batch_data:
+            db.execute(insert(FlightTrackRaw).values(batch_data))
 
         # 更新文件状态
         db_file.row_count = row_count
@@ -355,17 +468,54 @@ def process_file_data(file_id: int, db: Session) -> dict:
         db_file.processed_time = datetime.utcnow()
         db.commit()
 
+        # 通知：处理完成
+        send_ws_notification({
+            "type": "completed",
+            "file_id": file_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "status": "completed",
+                "progress": 100.0,
+                "stage": "完成",
+                "processed_rows": row_count,
+                "total_rows": total_rows,
+                "message": "处理完成"
+            }
+        })
+
         return {
             "total_points": row_count,
             "status": "completed",
         }
 
     except Exception as e:
+        # 记录错误
+        logger.error(f"处理文件 {file_id} 时发生错误: {e}", exc_info=True)
+
         # 更新状态为失败
         db_file.status = "failed"
-        db_file.error_message = str(e)
+        # 限制错误消息长度
+        error_msg = str(e)
+        if len(error_msg) > 500:
+            error_msg = error_msg[:500] + "..."
+        db_file.error_message = error_msg
         db.commit()
-        raise
+
+        # 通知：处理失败
+        send_ws_notification({
+            "type": "error",
+            "file_id": file_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "message": error_msg
+            }
+        })
+
+        # 返回错误信息而不是抛出异常（因为在异步任务中）
+        return {
+            "status": "failed",
+            "error": error_msg
+        }
 
 
 def get_file_by_id(file_id: int, db: Session, user_id: Optional[int] = None) -> Optional[DataFile]:
@@ -392,7 +542,7 @@ def get_user_files(
 
 
 def delete_file(file_id: int, db: Session, user_id: int) -> bool:
-    """删除文件"""
+    """删除文件（从 MinIO 和数据库）"""
     db_file = db.query(DataFile).filter(
         DataFile.id == file_id,
         DataFile.user_id == user_id
@@ -401,9 +551,14 @@ def delete_file(file_id: int, db: Session, user_id: int) -> bool:
     if not db_file:
         return False
 
-    # 删除物理文件
-    if os.path.exists(db_file.file_path):
-        os.remove(db_file.file_path)
+    # 从 MinIO 删除文件
+    try:
+        minio_service.delete_file(db_file.file_path)
+    except Exception as e:
+        # 记录错误但继续删除数据库记录
+        from core.logging import get_logger
+        logger = get_logger(__name__)
+        logger.warning(f"MinIO 文件删除失败，继续删除数据库记录: {e}")
 
     # 删除数据库记录（级联删除关联的轨迹数据）
     db.delete(db_file)

@@ -5,7 +5,7 @@
       <div class="dashboard-header">
         <div>
           <h1 class="dashboard-title">欢迎回来，{{ user?.username || '用户' }}！</h1>
-          <p class="dashboard-subtitle">这是您的雷达轨迹分析控制台</p>
+          <p class="dashboard-subtitle">这是您的智能轨迹分析控制台</p>
         </div>
         <div class="header-actions">
           <button class="btn btn-primary" @click="navigateToUpload">
@@ -215,12 +215,12 @@
               </svg>
             </div>
             <div class="file-info">
-              <div class="file-name">{{ file.original_filename || file.file_name }}</div>
+              <div class="file-name">{{ file.filename }}</div>
               <div class="file-meta">
                 <span class="file-status" :class="`status-${file.status}`">
                   {{ getStatusText(file.status) }}
                 </span>
-                <span class="file-date">{{ formatDate(file.upload_time) }}</span>
+                <span class="file-date">{{ formatDate(file.uploaded_at) }}</span>
               </div>
             </div>
             <div class="file-size">{{ formatFileSize(file.file_size) }}</div>
@@ -298,14 +298,19 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
+import { filesApi } from '@/api/files'
+import type { FileItem } from '@/api/types'
 import AppHeader from '@/components/AppHeader.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const appStore = useAppStore()
 
 const { user } = storeToRefs(authStore)
 
-const recentFiles = ref<any[]>([])
+const recentFiles = ref<FileItem[]>([])
+const loading = ref(false)
 
 interface Activity {
   id: number
@@ -343,14 +348,27 @@ const stats = ref({
 })
 
 const loadDashboardData = async () => {
-  // 静态数据，暂时不调用 API
-  stats.value = {
-    totalFiles: 0,
-    totalTracks: 0,
-    totalZones: 0,
-    recentIntrusions: 0,
+  loading.value = true
+  try {
+    const response = await filesApi.getFileList({
+      skip: 0,
+      limit: 5,
+      status: 'completed', // 只显示已完成的文件
+    })
+
+    stats.value.totalFiles = response.total
+    recentFiles.value = response.files.slice(0, 5) // 只显示最近 5 个文件
+
+    // 其他统计数据暂时保持默认值（需要额外的 API）
+    stats.value = {
+      ...stats.value,
+      totalTracks: response.total, // 暂时用文件总数代替
+    }
+  } catch (error: any) {
+    appStore.error(error.message || '加载数据失败')
+  } finally {
+    loading.value = false
   }
-  recentFiles.value = []
 }
 
 const navigateToUpload = () => {

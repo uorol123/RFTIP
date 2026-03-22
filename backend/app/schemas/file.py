@@ -53,6 +53,17 @@ class DataFileResponse(BaseModel):
     def record_count(self) -> Optional[int]:
         return self.row_count
 
+    @computed_field
+    @property
+    def category(self) -> str:
+        # 根据 file_type 推断 category
+        return "trajectory"  # 默认为轨迹数据
+
+    @computed_field
+    @property
+    def uploaded_at(self) -> datetime:
+        return self.upload_time
+
     class Config:
         from_attributes = True
 
@@ -69,13 +80,25 @@ class FileUploadResponse(BaseModel):
     file_name: str
     status: str
     message: str
+    file_size: Optional[int] = None
+    category: Optional[str] = None
+
+    # 前端兼容字段
+    @computed_field
+    @property
+    def filename(self) -> str:
+        return self.file_name
 
 
 class FileStatusResponse(BaseModel):
     """文件处理状态响应模型"""
     file_id: int
+    filename: Optional[str] = None
     status: str
     progress: float = Field(0.0, ge=0, le=100, description="处理进度（百分比）")
+    stage: Optional[str] = Field(None, description="处理阶段")
     message: Optional[str] = None
     processed_rows: Optional[int] = None
     total_rows: Optional[int] = None
+    outliers_filtered: Optional[int] = None
+    tracks_detected: Optional[int] = None

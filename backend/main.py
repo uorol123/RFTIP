@@ -16,7 +16,7 @@ from core.middleware import (
     PerformanceLoggingMiddleware,
 )
 from core.error_handler import register_exception_handlers
-from app.routers import health, auth, files, tracks, zones, analysis, query
+from app.routers import health, auth, files, tracks, zones, analysis, query, websocket
 
 
 settings = get_settings()
@@ -89,6 +89,7 @@ app.include_router(tracks.router, prefix="/api")
 app.include_router(zones.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 app.include_router(query.router, prefix="/api")
+app.include_router(websocket.router, prefix="/api")
 
 logger.info("All routers registered successfully")
 

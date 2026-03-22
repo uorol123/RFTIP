@@ -73,6 +73,44 @@ async def get_current_user(
     return UserResponse.model_validate(user)
 
 
+def get_current_user_from_token(token: str) -> UserResponse:
+    """
+    从token获取当前用户（同步版本，用于WebSocket认证）
+
+    Args:
+        token: JWT token字符串
+
+    Returns:
+        UserResponse: 用户信息
+    """
+    from app.services import decode_access_token
+    from core.database import SessionLocal
+
+    token_data = decode_access_token(token)
+    if token_data is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭据"
+        )
+
+    db = SessionLocal()
+    try:
+        user = get_user_by_id(db, token_data.user_id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户不存在"
+            )
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="用户已被禁用"
+            )
+        return UserResponse.model_validate(user)
+    finally:
+        db.close()
+
+
 async def get_current_active_user(
     current_user: Annotated[UserResponse, Depends(get_current_user)]
 ) -> UserResponse:

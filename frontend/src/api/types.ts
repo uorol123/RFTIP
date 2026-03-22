@@ -274,3 +274,135 @@ export interface PaginationParams {
   sort_by?: string
   order?: 'asc' | 'desc'
 }
+
+// ========== File Management Module Types (API v2) ==========
+
+export type FileCategory = 'trajectory' | 'radar_station'
+export type FileStatus = 'pending' | 'processing' | 'completed' | 'failed'
+export type ProcessingStage = '解析中' | '预处理中' | '存储中' | '完成'
+
+// Single file upload response
+export interface FileUploadResponse {
+  file_id: number
+  filename: string
+  file_size: number
+  category: FileCategory
+  status: FileStatus
+  message: string
+}
+
+// Batch upload response
+export interface BatchUploadResponse {
+  task_id: string
+  total_files: number
+  files: {
+    file_id: number
+    filename: string
+    status: FileStatus
+  }[]
+  message: string
+}
+
+// Share link request
+export interface ShareFileRequest {
+  expire_hours?: number
+  password?: string | null
+  max_downloads?: number | null
+}
+
+// Share link response
+export interface ShareFileResponse {
+  share_token: string
+  share_url: string
+  expire_at: string
+  qr_code: string  // base64 encoded PNG
+}
+
+// File item in list
+export interface FileItem {
+  id: number
+  filename: string
+  file_size: number
+  category: FileCategory
+  row_count?: number
+  status: FileStatus
+  is_public: boolean
+  share_url?: string
+  uploaded_at: string
+  processed_at?: string
+}
+
+// File list response
+export interface FileListResponse {
+  total: number
+  files: FileItem[]
+}
+
+// File status response (real-time progress)
+export interface FileStatusResponse {
+  file_id: number
+  filename: string
+  status: FileStatus
+  progress: number  // 0-100
+  stage: ProcessingStage
+  message: string | null
+  processed_rows?: number
+  total_rows?: number
+  outliers_filtered?: number
+}
+
+// File detail response
+export interface FileDetailResponse {
+  id: number
+  filename: string
+  file_size: number
+  category: FileCategory
+  row_count?: number
+  status: FileStatus
+  is_public: boolean
+  uploaded_at: string
+  processed_at?: string
+  share_info?: {
+    share_token: string
+    share_url: string
+    expire_at: string
+    download_count: number
+  }
+}
+
+// WebSocket message types
+export type WsMessageType = 'progress' | 'completed' | 'error'
+
+export interface WsProgressData {
+  status: FileStatus
+  progress: number
+  stage: ProcessingStage
+  processed_rows: number
+  total_rows: number
+  outliers_filtered: number
+  message: string
+}
+
+export interface WsCompletedData {
+  status: FileStatus
+  progress: number
+  processed_rows: number
+  outliers_filtered: number
+  tracks_detected: number
+  message: string
+}
+
+export interface WsMessage {
+  type: WsMessageType
+  file_id: number
+  data: WsProgressData | WsCompletedData
+}
+
+// File list query params
+export interface FileListParams {
+  skip?: number
+  limit?: number
+  category?: FileCategory
+  status?: FileStatus
+  search?: string
+}

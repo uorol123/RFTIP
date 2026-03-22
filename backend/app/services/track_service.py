@@ -285,7 +285,8 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
             if inliers:
                 corrected_lat = np.mean([p[0] for p in inliers])
                 corrected_lng = np.mean([p[1] for p in inliers])
-                corrected_alt = np.mean([p[2] for p in inliers if p[2] is not None] or 0])
+                valid_alts = [p[2] for p in inliers if p[2] is not None]
+                corrected_alt = np.mean(valid_alts) if valid_alts else 0
                 confidence = np.sum(inlier_mask) / len(inlier_mask)
             else:
                 corrected_lat, corrected_lng, corrected_alt = None, None, None

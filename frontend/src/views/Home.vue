@@ -24,12 +24,12 @@
       <div class="hero-section">
         <div class="badge">
           <span class="badge-dot"></span>
-          <span>雷达飞行轨迹智能平台</span>
+          <span>智能轨迹分析与可视化系统</span>
         </div>
 
         <h1 class="title">
           <span class="title-main">RFTIP</span>
-          <span class="title-sub">基于多源数据融合的雷达轨迹监测与智能分析平台</span>
+          <span class="title-sub">传感器探测特征分析与可视化</span>
         </h1>
 
         <p class="description">
