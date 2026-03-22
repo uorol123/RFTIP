@@ -62,7 +62,7 @@ async def get_statistics(
     stats["tracks"] = {
         "raw_count": db.query(func.count(FlightTrackRaw.id)).scalar(),
         "corrected_count": db.query(func.count(FlightTrackCorrected.id)).scalar(),
-        "unique_tracks": db.query(func.count(func.distinct(FlightTrackRaw.track_id))).scalar(),
+        "unique_tracks": db.query(func.count(func.distinct(FlightTrackRaw.batch_id))).scalar(),
     }
 
     # 雷达站统计

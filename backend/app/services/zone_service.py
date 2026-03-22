@@ -233,7 +233,7 @@ def check_intrusion(
     if is_inside:
         return {
             "zone_id": zone.id,
-            "track_id": track.track_id,
+            "track_id": track.batch_id,
             "timestamp": track.timestamp,
             "latitude": track.latitude,
             "longitude": track.longitude,
@@ -256,7 +256,7 @@ def detect_intrusions(
     zones = get_active_zones(db)
 
     # 获取修正后的轨迹数据
-    query = db.query(FlightTrackCorrected).filter(FlightTrackCorrected.track_id == track_id)
+    query = db.query(FlightTrackCorrected).filter(FlightTrackCorrected.batch_id == track_id)
     if start_time:
         query = query.filter(FlightTrackCorrected.timestamp >= start_time)
     if end_time:

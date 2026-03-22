@@ -254,7 +254,7 @@ def analyze_trajectory(
     """分析整体轨迹"""
     # 获取轨迹数据
     query = db.query(FlightTrackCorrected).filter(
-        FlightTrackCorrected.track_id == request.track_id
+        FlightTrackCorrected.batch_id == request.track_id
     )
 
     if request.start_time:
@@ -318,7 +318,7 @@ def analyze_segment(
 ) -> AnalysisResult:
     """分析区间轨迹"""
     query = db.query(FlightTrackCorrected).filter(
-        FlightTrackCorrected.track_id == request.track_id,
+        FlightTrackCorrected.batch_id == request.track_id,
         FlightTrackCorrected.timestamp >= request.start_time,
         FlightTrackCorrected.timestamp <= request.end_time,
     )

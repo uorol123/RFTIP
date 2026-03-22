@@ -766,7 +766,7 @@ def get_raw_tracks(
     if file_id is not None:
         query = query.filter(FlightTrackRaw.file_id == file_id)
     if track_id is not None:
-        query = query.filter(FlightTrackRaw.track_id == track_id)
+        query = query.filter(FlightTrackRaw.batch_id == track_id)
     if start_time is not None:
         query = query.filter(FlightTrackRaw.timestamp >= start_time)
     if end_time is not None:
@@ -787,7 +787,7 @@ def get_corrected_tracks(
     query = db.query(FlightTrackCorrected)
 
     if track_id is not None:
-        query = query.filter(FlightTrackCorrected.track_id == track_id)
+        query = query.filter(FlightTrackCorrected.batch_id == track_id)
     if start_time is not None:
         query = query.filter(FlightTrackCorrected.timestamp >= start_time)
     if end_time is not None:

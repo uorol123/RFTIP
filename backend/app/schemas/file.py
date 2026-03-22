@@ -29,6 +29,7 @@ class DataFileResponse(BaseModel):
     status: str
     error_message: Optional[str] = None
     is_public: bool
+    category: str = "trajectory"  # 文件分类
     upload_time: datetime
     processed_time: Optional[datetime] = None
 
@@ -52,12 +53,6 @@ class DataFileResponse(BaseModel):
     @property
     def record_count(self) -> Optional[int]:
         return self.row_count
-
-    @computed_field
-    @property
-    def category(self) -> str:
-        # 根据 file_type 推断 category
-        return "trajectory"  # 默认为轨迹数据
 
     @computed_field
     @property
