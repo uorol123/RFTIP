@@ -19,6 +19,7 @@ class DataFile(Base):
     file_type = Column(String(50), nullable=False, comment="文件类型 (csv/excel)")
     file_format = Column(String(50), comment="文件格式 (csv/xlsx/xls)")
     file_hash = Column(String(64), comment="文件哈希值（MD5）")
+    category = Column(String(50), default="trajectory", comment="文件分类 (trajectory/radar_station)")
     row_count = Column(Integer, comment="数据行数")
     status = Column(String(20), default="pending", comment="处理状态 (pending/processing/completed/failed)")
     error_message = Column(Text, comment="错误信息")

@@ -3,7 +3,7 @@
 """
 from datetime import datetime
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -25,7 +25,7 @@ async def upload_file(
     file: Annotated[UploadFile, File()],
     current_user: Annotated[UserResponse, Depends(get_current_active_user)],
     db: Annotated[Session, Depends(get_db)],
-    category: Annotated[str, Query()] = "trajectory",
+    category: Annotated[str, Form()] = "trajectory",
 ):
     """
     上传数据文件（上传后自动处理）
@@ -121,6 +121,57 @@ async def process_file_async(file_id: int, user_id: int, db: Session):
     finally:
         db_async.close()
         print(f"[DEBUG] File processing task completed for file_id={file_id}", flush=True)
+
+
+@router.post("/upload-batch", status_code=status.HTTP_201_CREATED)
+async def upload_files_batch(
+    files: Annotated[list[UploadFile], File()],
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    category: Annotated[str, Form()] = "trajectory",
+):
+    """
+    批量上传数据文件
+
+    支持一次上传多个文件，每个文件会被单独处理
+    """
+    import asyncio
+    import uuid
+
+    # 生成批量任务ID
+    task_id = str(uuid.uuid4())
+    results = []
+
+    # 上传所有文件
+    for file in files:
+        try:
+            upload_response = await file_service.save_uploaded_file(
+                file, current_user.id, db, category
+            )
+            file_id = upload_response.file_id
+
+            # 异步处理每个文件
+            asyncio.create_task(process_file_async(file_id, current_user.id, db))
+
+            results.append({
+                "filename": file.filename,
+                "file_id": file_id,
+                "status": "pending"
+            })
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "file_id": None,
+                "status": "failed",
+                "error": str(e)
+            })
+
+    return {
+        "task_id": task_id,
+        "total_files": len(files),
+        "files": results,
+        "message": f"已成功上传 {len(results)} 个文件"
+    }
 
 
 @router.post("/{file_id}/process", response_model=dict)

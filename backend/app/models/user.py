@@ -25,6 +25,7 @@ class User(Base):
 
     # 关系
     login_logs = relationship("UserLoginLog", back_populates="user", cascade="all, delete-orphan")
+    error_analysis_tasks = relationship("ErrorAnalysisTask", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}')>"

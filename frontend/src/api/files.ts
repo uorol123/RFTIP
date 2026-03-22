@@ -172,20 +172,6 @@ export async function cancelShare(fileId: number): Promise<void> {
 // ========== 2.10 文件处理 WebSocket ==========
 
 /**
- * WebSocket 回调函数类型
- */
-export interface FileProgressCallbacks {
-  /** 进度更新回调 */
-  onProgress?: (data: FileStatusResponse) => void
-  /** 处理完成回调 */
-  onCompleted?: (data: FileStatusResponse) => void
-  /** 错误回调 */
-  onError?: (error: string) => void
-  /** 连接关闭回调 */
-  onClose?: () => void
-}
-
-/**
  * 创建文件处理进度 WebSocket 连接
  * @param fileId - 文件ID
  * @param token - JWT access token
@@ -213,6 +199,9 @@ export function createFileProgressWebSocket(
     : window.location.host
   const wsUrl = `${wsProtocol}//${wsHost}/api/ws/files/${fileId}?token=${token}`
   const ws = new WebSocket(wsUrl)
+
+  // 跟踪连接是否被手动关闭
+  let manuallyClosed = false
 
   ws.onopen = () => {
     console.log(`[WS] Connected to file ${fileId}`)
@@ -249,11 +238,28 @@ export function createFileProgressWebSocket(
 
   ws.onerror = (error) => {
     console.error('WebSocket error:', error)
-    callbacks.onError?.('WebSocket 连接错误')
+    // 不再自动触发错误回调，让 onclose 处理
+    // 只有在异常错误（非正常关闭）时才报错
   }
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    console.log(`[WS] Closed for file ${fileId}, code: ${event.code}, wasClean: ${event.wasClean}`)
+    // 清理心跳定时器
+    clearInterval(heartbeatInterval)
+
+    // 只有在非正常关闭且未手动关闭时才触发错误回调
+    if (!event.wasClean && !manuallyClosed) {
+      callbacks.onError?.('WebSocket 连接中断')
+    }
+
     callbacks.onClose?.()
+  }
+
+  // 添加手动关闭方法
+  const originalClose = ws.close.bind(ws)
+  ws.close = () => {
+    manuallyClosed = true
+    originalClose()
   }
 
   return ws

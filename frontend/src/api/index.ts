@@ -4,6 +4,7 @@ export * as filesApi from './files'
 export * as tracksApi from './tracks'
 export * as zonesApi from './zones'
 export * as analysisApi from './analysis'
+export * as errorAnalysisApi from './errorAnalysis'
 
 // Export types
 export * from './types'

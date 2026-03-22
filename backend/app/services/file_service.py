@@ -27,26 +27,25 @@ FILE_TYPE_MAP = {".csv": "csv", ".xlsx": "excel", ".xls": "excel"}
 
 # 中文列名到英文列名的映射
 COLUMN_NAME_MAPPING = {
-    # 中文 -> 英文
-    "批号": "track_id",           # 飞机ID
+    # 轨迹数据列名
+    "批号": "batch_id",           # 飞机批号
     "日期": "date",               # 日期 YYYYMMDD
     "入库时间": "timestamp",      # 完整时间戳（优先使用）
     "纬度": "latitude",
     "经度": "longitude",
     "高度": "altitude",
     "速度": "speed",
-    "航向": "heading",
-    "站号": "radar_station_id",   # 雷达站ID
+    "站号": "station_id",         # 雷达站号
     # 英文 -> 英文（兼容原有格式）
-    "track_id": "track_id",
+    "batch_id": "batch_id",
+    "station_id": "station_id",
+    "track_id": "batch_id",       # 兼容旧格式
     "timestamp": "timestamp",
     "date": "date",
     "latitude": "latitude",
     "longitude": "longitude",
     "altitude": "altitude",
     "speed": "speed",
-    "heading": "heading",
-    "radar_station_id": "radar_station_id",
 }
 
 
@@ -111,6 +110,7 @@ async def save_uploaded_file(
         file_type=FILE_TYPE_MAP[file_ext],
         file_format=file_ext[1:],
         file_hash=file_hash,
+        category=category,  # 保存文件分类
         status="pending",
     )
     db.add(db_file)
@@ -209,11 +209,11 @@ def validate_track_data(df: pd.DataFrame) -> List[str]:
 
     支持中英文列名：
     - 必需列（中文）: 批号, 入库时间/日期, 纬度, 经度
-    - 必需列（英文）: track_id, timestamp, latitude, longitude
+    - 必需列（英文）: batch_id, timestamp, latitude, longitude
 
     字段说明：
-    - 批号: 飞机ID (track_id)
-    - 站号: 雷达站ID (radar_station_id)
+    - 批号: 飞机批号 (batch_id)
+    - 站号: 雷达站号 (station_id)
     - 入库时间: 完整时间戳 (timestamp，优先使用)
     - 日期: 日期 YYYYMMDD (仅日期，作为备用)
     """
@@ -222,7 +222,7 @@ def validate_track_data(df: pd.DataFrame) -> List[str]:
 
     # 检查必需列（使用标准化后的列名）
     # timestamp 可以是 "入库时间" 或 "日期"
-    required_columns = ["track_id", "latitude", "longitude"]
+    required_columns = ["batch_id", "latitude", "longitude"]
     timestamp_sources = ["timestamp", "date", "日期"]  # 至少需要一个时间列
     missing_columns = []
 
@@ -230,11 +230,12 @@ def validate_track_data(df: pd.DataFrame) -> List[str]:
         # 检查英文列名
         if req_col in df_normalized.columns:
             continue
-        # 检查对应的中文列名
-        chinese_col = next((k for k, v in COLUMN_NAME_MAPPING.items() if v == req_col), None)
-        if chinese_col and chinese_col in df.columns:
+        # 特殊处理 latitude/longitude 的中文列名
+        if req_col == "latitude" and "纬度" in df.columns:
             continue
-        missing_columns.append(f"{req_col} ({chinese_col or 'N/A'})")
+        if req_col == "longitude" and "经度" in df.columns:
+            continue
+        missing_columns.append(f"{req_col}")
 
     # 检查是否至少有一个时间列
     has_timestamp = any(col in df_normalized.columns or col in df.columns for col in timestamp_sources)
@@ -245,7 +246,7 @@ def validate_track_data(df: pd.DataFrame) -> List[str]:
         raise ValueError(
             f"缺少必需的列: {', '.join(missing_columns)}。\n"
             f"支持中英文列名：\n"
-            f"  - 批号/track_id（飞机ID）\n"
+            f"  - 批号/batch_id（飞机批号）\n"
             f"  - 入库时间/timestamp（完整时间戳）\n"
             f"  - 日期/date（YYYYMMDD，可替代入库时间）\n"
             f"  - 纬度/latitude（纬度）\n"
@@ -256,6 +257,80 @@ def validate_track_data(df: pd.DataFrame) -> List[str]:
     errors = []
 
     # 获取纬度列（可能是中文或英文）
+    lat_col = "latitude" if "latitude" in df_normalized.columns else "纬度"
+    if lat_col in df_normalized.columns:
+        if not df_normalized[lat_col].between(-90, 90).all():
+            errors.append("纬度值必须在 -90 到 90 之间")
+
+    # 获取经度列
+    lng_col = "longitude" if "longitude" in df_normalized.columns else "经度"
+    if lng_col in df_normalized.columns:
+        if not df_normalized[lng_col].between(-180, 180).all():
+            errors.append("经度值必须在 -180 到 180 之间")
+
+    return errors
+
+
+def validate_radar_station_data(df: pd.DataFrame) -> List[str]:
+    """
+    验证雷达站配置数据格式
+
+    支持中英文列名：
+    - 必需列: 站号/station_id, 经度/longitude, 纬度/latitude
+    - 可选列: 高度/altitude, 描述/description
+    """
+    # 雷达站列名映射（先处理，避免被通用映射覆盖）
+    station_column_mapping = {
+        "站号": "station_id",
+        "雷达站编号": "station_id",
+        "经度": "longitude",
+        "纬度": "latitude",
+        "高度": "altitude",
+        "描述": "description",
+        "备注": "description",
+    }
+
+    # 先重命名雷达站专用列
+    df_temp = df.copy()
+    for cn_col, en_col in station_column_mapping.items():
+        if cn_col in df_temp.columns:
+            df_temp = df_temp.rename(columns={cn_col: en_col})
+
+    # 再标准化其他列名
+    df_normalized = normalize_column_names(df_temp)
+
+    # 检查必需列
+    required_columns = ["station_id", "latitude", "longitude"]
+    missing_columns = []
+
+    for req_col in required_columns:
+        # 检查英文列名
+        if req_col in df_normalized.columns:
+            continue
+        # 特殊处理：纬度/经度/站号
+        if req_col == "station_id" and "站号" in df.columns:
+            continue
+        if req_col == "latitude" and "纬度" in df.columns:
+            continue
+        if req_col == "longitude" and "经度" in df.columns:
+            continue
+        missing_columns.append(f"{req_col}")
+
+    if missing_columns:
+        raise ValueError(
+            f"缺少必需的列: {', '.join(missing_columns)}。\n"
+            f"支持中英文列名：\n"
+            f"  - 站号/station_id（雷达站编号，必需）\n"
+            f"  - 经度/longitude（必需）\n"
+            f"  - 纬度/latitude（必需）\n"
+            f"  - 高度/altitude（可选，单位：米）\n"
+            f"  - 描述/description（可选）"
+        )
+
+    # 验证数据类型和范围
+    errors = []
+
+    # 获取纬度列
     lat_col = "latitude" if "latitude" in df_normalized.columns else "纬度"
     if lat_col in df_normalized.columns:
         if not df_normalized[lat_col].between(-90, 90).all():
@@ -353,11 +428,11 @@ def process_file_data(file_id: int, db: Session, websocket_manager=None, loop=No
     if not db_file:
         raise ValueError(f"文件不存在: file_id={file_id}")
 
-    try:
-        # 更新状态为处理中
-        db_file.status = "processing"
-        db.commit()
+    # 更新状态为处理中
+    db_file.status = "processing"
+    db.commit()
 
+    try:
         # 通知：开始处理
         send_ws_notification({
             "type": "progress",
@@ -399,123 +474,268 @@ def process_file_data(file_id: int, db: Session, websocket_manager=None, loop=No
                 }
         })
 
-        # 标准化列名（中文 -> 英文）
-        df = normalize_column_names(df)
-
-        # 验证数据
-        validate_track_data(df)
-
-        # 导入数据 - 使用批量插入优化性能
-        from sqlalchemy import insert
-
-        batch_size = 2000  # 每批插入数量
-        row_count = 0
-        batch_data = []
-
-        # 将 DataFrame 转换为字典列表（比 iterrows 快得多）
-        records = df.to_dict('records')
-
-        for idx, row in enumerate(records):
-            # 解析时间戳（优先使用入库时间，fallback 到日期）
-            timestamp = parse_timestamp(
-                value=row.get("timestamp"),
-                fallback_date=row.get("date")
-            )
-
-            # 构建插入数据字典
-            track_data = {
-                "file_id": file_id,
-                "track_id": str(row.get("track_id")),
-                "timestamp": timestamp,
-                "latitude": float(row.get("latitude")),
-                "longitude": float(row.get("longitude")),
-                "altitude": float(row.get("altitude") or 0) if pd.notna(row.get("altitude")) else None,
-                "speed": float(row.get("speed") or 0) if pd.notna(row.get("speed")) else None,
-                "heading": float(row.get("heading") or 0) if pd.notna(row.get("heading")) else None,
-                "raw_data": json.dumps(row),
-            }
-            batch_data.append(track_data)
-            row_count += 1
-
-            # 批量插入
-            if len(batch_data) >= batch_size:
-                db.execute(insert(FlightTrackRaw).values(batch_data))
-                batch_data = []
-
-                # 每批发送一次进度更新
-                progress = 30.0 + (row_count / total_rows * 50)
-                send_ws_notification({
-                    "type": "progress",
-                    "file_id": file_id,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": {
-                        "status": "processing",
-                        "progress": progress,
-                        "stage": "存储中",
-                        "processed_rows": row_count,
-                        "total_rows": total_rows,
-                        "message": f"正在存储数据... ({row_count}/{total_rows})"
-                    }
-                })
-
-        # 插入剩余数据
-        if batch_data:
-            db.execute(insert(FlightTrackRaw).values(batch_data))
-
-        # 更新文件状态
-        db_file.row_count = row_count
-        db_file.status = "completed"
-        db_file.processed_time = datetime.utcnow()
-        db.commit()
-
-        # 通知：处理完成
-        send_ws_notification({
-            "type": "completed",
-            "file_id": file_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {
-                "status": "completed",
-                "progress": 100.0,
-                "stage": "完成",
-                "processed_rows": row_count,
-                "total_rows": total_rows,
-                "message": "处理完成"
-            }
-        })
-
-        return {
-            "total_points": row_count,
-            "status": "completed",
-        }
+        # 根据文件类型进行不同的处理
+        if db_file.category == "radar_station":
+            # 雷达站配置数据处理（不使用通用列名标准化，避免站号被映射为radar_station_id）
+            return _process_radar_station_data(file_id, db, df, total_rows, send_ws_notification)
+        else:
+            # 轨迹数据处理 - 需要标准化列名
+            df = normalize_column_names(df)
+            return _process_track_data(file_id, db, df, total_rows, send_ws_notification)
 
     except Exception as e:
         # 记录错误
         logger.error(f"处理文件 {file_id} 时发生错误: {e}", exc_info=True)
 
         # 更新状态为失败
-        db_file.status = "failed"
-        # 限制错误消息长度
-        error_msg = str(e)
-        if len(error_msg) > 500:
-            error_msg = error_msg[:500] + "..."
-        db_file.error_message = error_msg
-        db.commit()
+        db_file = db.query(DataFile).filter(DataFile.id == file_id).first()
+        if db_file:
+            db_file.status = "failed"
+            # 限制错误消息长度
+            error_msg = str(e)
+            if len(error_msg) > 500:
+                error_msg = error_msg[:500] + "..."
+            db_file.error_message = error_msg
+            db.commit()
 
-        # 通知：处理失败
-        send_ws_notification({
-            "type": "error",
-            "file_id": file_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {
-                "message": error_msg
-            }
-        })
+            # 通知：处理失败
+            send_ws_notification({
+                "type": "error",
+                "file_id": file_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "message": error_msg
+                }
+            })
 
         # 返回错误信息而不是抛出异常（因为在异步任务中）
         return {
             "status": "failed",
-            "error": error_msg
+            "error": str(e)
         }
+
+
+def _process_track_data(file_id: int, db: Session, df: pd.DataFrame, total_rows: int, send_ws_notification) -> dict:
+    """处理轨迹数据"""
+    import json
+    from sqlalchemy import insert
+    from app.models.flight_track import FlightTrackRaw, RadarStation
+
+    # 验证数据
+    validate_track_data(df)
+
+    # 预加载所有雷达站，建立 station_id -> id 的映射
+    radar_stations = db.query(RadarStation.station_id, RadarStation.id).all()
+    station_id_to_db_id = {code: id for code, id in radar_stations}
+    logger.info(f"已加载 {len(station_id_to_db_id)} 个雷达站映射")
+
+    batch_size = 2000  # 每批插入数量
+    row_count = 0
+    batch_data = []
+
+    # 将 DataFrame 转换为字典列表（比 iterrows 快得多）
+    records = df.to_dict('records')
+
+    for idx, row in enumerate(records):
+        # 解析时间戳（优先使用入库时间，fallback 到日期）
+        timestamp = parse_timestamp(
+            value=row.get("timestamp"),
+            fallback_date=row.get("date")
+        )
+
+        # 获取站号并转换为雷达站ID
+        station_id = str(row.get("station_id", "")).strip()
+        radar_station_db_id = station_id_to_db_id.get(station_id)
+
+        # 构建插入数据字典
+        track_data = {
+            "file_id": file_id,
+            "batch_id": str(row.get("batch_id")),
+            "station_id": station_id,
+            "radar_station_id": radar_station_db_id,  # 可能为None如果雷达站不存在
+            "timestamp": timestamp,
+            "latitude": float(row.get("latitude")),
+            "longitude": float(row.get("longitude")),
+            "altitude": float(row.get("altitude") or 0) if pd.notna(row.get("altitude")) else None,
+            "speed": float(row.get("speed") or 0) if pd.notna(row.get("speed")) else None,
+        }
+        batch_data.append(track_data)
+        row_count += 1
+
+        # 批量插入
+        if len(batch_data) >= batch_size:
+            db.execute(insert(FlightTrackRaw).values(batch_data))
+            db.commit()  # 每批提交一次
+            batch_data = []
+
+            # 每批发送一次进度更新
+            progress = 30.0 + (row_count / total_rows * 50)
+            send_ws_notification({
+                "type": "progress",
+                "file_id": file_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "status": "processing",
+                    "progress": progress,
+                    "stage": "存储中",
+                    "processed_rows": row_count,
+                    "total_rows": total_rows,
+                    "message": f"正在存储数据... ({row_count}/{total_rows})"
+                }
+            })
+
+    # 插入剩余数据
+    if batch_data:
+        db.execute(insert(FlightTrackRaw).values(batch_data))
+
+    # 更新文件状态
+    db_file = db.query(DataFile).filter(DataFile.id == file_id).first()
+    db_file.row_count = row_count
+    db_file.status = "completed"
+    db_file.processed_time = datetime.utcnow()
+    db.commit()
+
+    # 通知：处理完成
+    send_ws_notification({
+        "type": "completed",
+        "file_id": file_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "data": {
+            "status": "completed",
+            "progress": 100.0,
+            "stage": "完成",
+            "processed_rows": row_count,
+            "total_rows": row_count,
+            "message": f"处理完成，共 {row_count} 条记录"
+        }
+    })
+
+    return {
+        "row_count": row_count,
+        "message": "轨迹数据处理完成"
+    }
+
+
+def _process_radar_station_data(file_id: int, db: Session, df: pd.DataFrame, total_rows: int, send_ws_notification) -> dict:
+    """处理雷达站配置数据"""
+    import json
+    from sqlalchemy import insert
+    from app.models.flight_track import RadarStation
+
+    # 验证数据
+    validate_radar_station_data(df)
+
+    # 雷达站列名特殊处理
+    station_column_mapping = {
+        "站号": "station_id",
+        "雷达站编号": "station_id",
+        "经度": "longitude",
+        "纬度": "latitude",
+        "高度": "altitude",
+        "描述": "description",
+        "备注": "description",
+    }
+
+    # 应用雷达站专用列名映射
+    for cn_col, en_col in station_column_mapping.items():
+        if cn_col in df.columns:
+            df = df.rename(columns={cn_col: en_col})
+
+    row_count = 0
+    updated_count = 0
+    inserted_count = 0
+
+    records = df.to_dict('records')
+
+    for idx, row in enumerate(records):
+        station_id = str(row.get("station_id", "")).strip()
+
+        if not station_id:
+            continue
+
+        # 检查是否已存在（按station_id查重，但允许同一station_id来自不同文件）
+        existing = db.query(RadarStation).filter(
+            RadarStation.station_id == station_id
+        ).first()
+
+        station_data = {
+            "file_id": file_id,
+            "station_id": station_id,
+            "latitude": float(row.get("latitude")),
+            "longitude": float(row.get("longitude")),
+            "altitude": float(row.get("altitude") or 0) if pd.notna(row.get("altitude")) else None,
+        }
+
+        # 可选字段
+        if pd.notna(row.get("description")):
+            station_data["description"] = str(row.get("description"))
+
+        if existing:
+            # 更新现有记录（保留原有station_id，更新其他信息）
+            if pd.notna(row.get("latitude")):
+                existing.latitude = float(row.get("latitude"))
+            if pd.notna(row.get("longitude")):
+                existing.longitude = float(row.get("longitude"))
+            if pd.notna(row.get("altitude")):
+                existing.altitude = float(row.get("altitude"))
+            if pd.notna(row.get("description")):
+                existing.description = str(row.get("description"))
+            updated_count += 1
+        else:
+            # 插入新记录
+            new_station = RadarStation(**station_data)
+            db.add(new_station)
+            inserted_count += 1
+
+        row_count += 1
+
+        # 每处理一条记录发送一次进度
+        progress = 30.0 + (row_count / total_rows * 50)
+        if idx % 5 == 0 or idx == total_rows - 1:  # 减少通知频率
+            send_ws_notification({
+                "type": "progress",
+                "file_id": file_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "status": "processing",
+                    "progress": progress,
+                    "stage": "存储中",
+                    "processed_rows": row_count,
+                    "total_rows": total_rows,
+                    "message": f"正在处理雷达站配置... ({row_count}/{total_rows})"
+                }
+            })
+
+    db.commit()
+
+    # 更新文件状态
+    db_file = db.query(DataFile).filter(DataFile.id == file_id).first()
+    db_file.row_count = row_count
+    db_file.status = "completed"
+    db_file.processed_time = datetime.utcnow()
+    db.commit()
+
+    # 通知：处理完成
+    send_ws_notification({
+        "type": "completed",
+        "file_id": file_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "data": {
+            "status": "completed",
+            "progress": 100.0,
+            "stage": "完成",
+            "processed_rows": row_count,
+            "total_rows": row_count,
+            "message": f"处理完成：新增 {inserted_count} 个，更新 {updated_count} 个"
+        }
+    })
+
+    return {
+        "row_count": row_count,
+        "inserted": inserted_count,
+        "updated": updated_count,
+        "message": f"雷达站配置处理完成：新增 {inserted_count} 个，更新 {updated_count} 个"
+    }
 
 
 def get_file_by_id(file_id: int, db: Session, user_id: Optional[int] = None) -> Optional[DataFile]:

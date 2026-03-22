@@ -45,6 +45,23 @@ from app.schemas.analysis import (
     LLMAnalysisRequest,
     LLMAnalysisResponse,
 )
+from app.schemas.error_analysis import (
+    ErrorAnalysisTaskStatus,
+    CostWeights,
+    ErrorAnalysisConfig,
+    ErrorAnalysisRequest,
+    ErrorAnalysisTaskResponse,
+    TrackSegmentResponse,
+    MatchPoint,
+    MatchGroupResponse,
+    ErrorResultResponse,
+    MatchStatistics,
+    ErrorAnalysisSummary,
+    ErrorAnalysisResult,
+    ErrorChartResponse,
+    TaskListResponse,
+    ErrorResponse,
+)
 
 __all__ = [
     # Auth
@@ -88,4 +105,20 @@ __all__ = [
     "AnalysisReport",
     "LLMAnalysisRequest",
     "LLMAnalysisResponse",
+    # Error Analysis
+    "ErrorAnalysisTaskStatus",
+    "CostWeights",
+    "ErrorAnalysisConfig",
+    "ErrorAnalysisRequest",
+    "ErrorAnalysisTaskResponse",
+    "TrackSegmentResponse",
+    "MatchPoint",
+    "MatchGroupResponse",
+    "ErrorResultResponse",
+    "MatchStatistics",
+    "ErrorAnalysisSummary",
+    "ErrorAnalysisResult",
+    "ErrorChartResponse",
+    "TaskListResponse",
+    "ErrorResponse",
 ]

@@ -54,9 +54,13 @@ from app.services.minio_service import minio_service
 # Temp avatar service
 from app.services.temp_avatar_service import temp_avatar_service
 
+# Error analysis service
+from app.services.error_analysis_service import ErrorAnalysisService
+
 __all__ += [
     "email_service",
     "verification_service",
     "minio_service",
     "temp_avatar_service",
+    "ErrorAnalysisService",
 ]

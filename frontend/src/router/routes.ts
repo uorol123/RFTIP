@@ -62,6 +62,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'AI Analysis' },
   },
   {
+    path: '/error-analysis',
+    name: 'ErrorAnalysis',
+    component: () => import('@/views/ErrorAnalysis.vue'),
+    meta: { title: '误差分析' },
+  },
+  {
+    path: '/error-analysis/history/:taskId',
+    name: 'ErrorAnalysisHistory',
+    component: () => import('@/views/ErrorAnalysisHistory.vue'),
+    meta: { title: '任务详情', requiresAuth: true },
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/Profile.vue'),

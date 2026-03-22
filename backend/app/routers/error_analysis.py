@@ -1,0 +1,530 @@
+"""
+误差分析API路由
+
+提供MRRA误差分析功能的API接口
+"""
+from typing import Annotated, List, Optional
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
+from core.database import get_db
+from app.routers.auth import get_current_active_user, UserResponse
+from app.schemas.error_analysis import (
+    ErrorAnalysisRequest,
+    ErrorAnalysisTaskResponse,
+    ErrorAnalysisResult,
+    ErrorChartResponse,
+    ErrorAnalysisConfig,
+    TaskListResponse,
+    TrackSegmentResponse,
+    MatchGroupResponse,
+    TaskDetailResponse,
+)
+from app.services.error_analysis_service import ErrorAnalysisService
+
+router = APIRouter(prefix="/error-analysis", tags=["error-analysis"])
+
+
+@router.post("/analyze", response_model=ErrorAnalysisTaskResponse)
+async def create_analysis_task(
+    request: ErrorAnalysisRequest,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    background_tasks: BackgroundTasks
+):
+    """
+    创建误差分析任务
+
+    - **file_id**: 数据文件ID
+    - **config**: 分析配置参数（可选）
+      - grid_resolution: 网格分辨率（度）
+      - time_window: 时间窗口（秒）
+      - match_distance_threshold: 匹配距离阈值（度）
+      - min_track_points: 最小航迹点数
+      - optimization_steps: 优化步长序列
+      - range_optimization_steps: 距离优化步长序列
+      - cost_weights: 代价函数权重
+      - max_match_groups: 最大匹配组数
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        task = service.create_analysis_task(request, current_user.id)
+
+        # 在后台执行分析
+        background_tasks.add_task(execute_analysis_task, db, task.task_id)
+
+        return task
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"创建分析任务失败: {str(e)}"
+        )
+
+
+@router.get("/config", response_model=ErrorAnalysisConfig)
+async def get_analysis_config(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)]
+):
+    """
+    获取默认分析配置
+    """
+    return ErrorAnalysisConfig()
+
+
+@router.get("/tasks", response_model=TaskListResponse)
+async def list_analysis_tasks(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    page: Annotated[int, Query(ge=1, description="页码")] = 1,
+    limit: Annotated[int, Query(ge=1, le=100, description="每页数量")] = 20
+):
+    """
+    获取误差分析任务列表
+
+    - **page**: 页码（从1开始）
+    - **limit**: 每页数量（1-100）
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        offset = (page - 1) * limit
+        tasks, total = service.list_tasks(
+            user_id=current_user.id,
+            limit=limit,
+            offset=offset
+        )
+
+        return TaskListResponse(
+            tasks=tasks,
+            total=total,
+            page=page,
+            limit=limit
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取任务列表失败: {str(e)}"
+        )
+
+
+@router.get("/tasks/{task_id}", response_model=ErrorAnalysisTaskResponse)
+async def get_task_detail(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    获取任务详情
+
+    - **task_id**: 任务ID
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        task = service.get_task_status(task_id)
+        return task
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取任务详情失败: {str(e)}"
+        )
+
+
+@router.get("/tasks/{task_id}/results", response_model=ErrorAnalysisResult)
+async def get_analysis_results(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    获取分析结果
+
+    - **task_id**: 任务ID
+
+    返回完整的误差分析结果，包括：
+    - 各雷达站的误差值
+    - 匹配统计信息
+    - 处理摘要
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        results = service.get_analysis_results(task_id)
+        return results
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取分析结果失败: {str(e)}"
+        )
+
+
+@router.get("/tasks/{task_id}/segments", response_model=List[TrackSegmentResponse])
+async def get_track_segments(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=1000, description="限制数量")] = 100
+):
+    """
+    获取航迹段列表
+
+    - **task_id**: 任务ID
+    - **limit**: 限制数量
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        segments = service.get_track_segments(task_id, limit)
+        return segments
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取航迹段失败: {str(e)}"
+        )
+
+
+@router.get("/tasks/{task_id}/matches", response_model=List[MatchGroupResponse])
+async def get_match_groups(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=1000, description="限制数量")] = 100
+):
+    """
+    获取匹配组列表
+
+    - **task_id**: 任务ID
+    - **limit**: 限制数量
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        matches = service.get_match_groups(task_id, limit)
+        return matches
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取匹配组失败: {str(e)}"
+        )
+
+
+@router.get("/tasks/{task_id}/chart", response_model=ErrorChartResponse)
+async def get_chart_data(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    获取图表数据
+
+    - **task_id**: 任务ID
+
+    返回用于可视化展示的数据：
+    - 各雷达站的误差值
+    - 匹配点数
+    - 置信度
+    - 匹配组大小分布
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        chart_data = service.get_chart_data(task_id)
+        return chart_data
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取图表数据失败: {str(e)}"
+        )
+
+
+# ========== 数据查询端点 ==========
+
+from app.models.flight_track import RadarStation, FlightTrackRaw
+from pydantic import BaseModel
+
+class RadarStationInfo(BaseModel):
+    """雷达站信息"""
+    id: int
+    station_id: str
+    latitude: float
+    longitude: float
+    altitude: Optional[float] = None
+    description: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class TrackInfo(BaseModel):
+    """轨迹信息"""
+    batch_id: str
+    point_count: int
+    start_time: datetime
+    end_time: datetime
+
+class TimeRange(BaseModel):
+    """时间范围"""
+    start_time: datetime
+    end_time: datetime
+
+
+@router.get("/radar-stations", response_model=List[RadarStationInfo])
+async def list_radar_stations(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    获取所有雷达站列表
+
+    返回数据库中所有已配置的雷达站信息
+    """
+    try:
+        stations = db.query(RadarStation).all()
+        return [
+            RadarStationInfo(
+                id=s.id,
+                station_id=s.station_id,
+                latitude=s.latitude,
+                longitude=s.longitude,
+                altitude=s.altitude,
+                description=s.description
+            )
+            for s in stations
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取雷达站列表失败: {str(e)}"
+        )
+
+
+@router.get("/radar-stations/{station_id}/tracks", response_model=List[TrackInfo])
+async def get_radar_station_tracks(
+    station_id: int,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    获取某雷达站观测的所有轨迹
+
+    - **station_id**: 雷达站ID（数据库主键）
+
+    返回该雷达站观测到的所有飞机批号列表及其时间范围
+    """
+    try:
+        # 查询该雷达站的所有轨迹点
+        tracks = db.query(
+            FlightTrackRaw.batch_id,
+            func.count(FlightTrackRaw.id).label('point_count'),
+            func.min(FlightTrackRaw.timestamp).label('start_time'),
+            func.max(FlightTrackRaw.timestamp).label('end_time')
+        ).filter(
+            FlightTrackRaw.radar_station_id == station_id
+        ).group_by(
+            FlightTrackRaw.batch_id
+        ).all()
+
+        return [
+            TrackInfo(
+                batch_id=t.batch_id,
+                point_count=t.point_count,
+                start_time=t.start_time,
+                end_time=t.end_time
+            )
+            for t in tracks
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取雷达站轨迹失败: {str(e)}"
+        )
+
+
+@router.get("/tracks/time-range", response_model=TimeRange)
+async def get_tracks_time_range(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    batch_ids: str = Query(..., description="逗号分隔的轨迹批号列表")
+):
+    """
+    获取指定轨迹的时间范围
+
+    - **batch_ids**: 逗号分隔的轨迹批号列表
+
+    返回这些轨迹的最早和最晚时间
+    """
+    try:
+        batch_list = [b.strip() for b in batch_ids.split(',')]
+        result = db.query(
+            func.min(FlightTrackRaw.timestamp).label('start_time'),
+            func.max(FlightTrackRaw.timestamp).label('end_time')
+        ).filter(
+            FlightTrackRaw.batch_id.in_(batch_list)
+        ).first()
+
+        if not result or not result.start_time:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="未找到指定的轨迹"
+            )
+
+        return TimeRange(
+            start_time=result.start_time,
+            end_time=result.end_time
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取时间范围失败: {str(e)}"
+        )
+
+
+@router.get("/common-tracks", response_model=List[TrackInfo])
+async def get_common_tracks(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    station_ids: str = Query(..., description="逗号分隔的雷达站ID列表")
+):
+    """
+    获取多个雷达站共同观测到的轨迹
+
+    - **station_ids**: 逗号分隔的雷达站ID列表
+
+    返回这些雷达站同时观测到的飞机批号列表
+    """
+    try:
+        station_list = [int(s.strip()) for s in station_ids.split(',')]
+
+        # 找出每个雷达站观测的轨迹
+        from sqlalchemy import func
+
+        # 查询每个batch_id被哪些雷达站观测到
+        track_stations = db.query(
+            FlightTrackRaw.batch_id,
+            func.array_agg(FlightTrackRaw.radar_station_id.distinct()).label('stations')
+        ).filter(
+            FlightTrackRaw.radar_station_id.in_(station_list)
+        ).group_by(
+            FlightTrackRaw.batch_id
+        ).all()
+
+        # 筛选出被所有指定雷达站都观测到的轨迹
+        common_tracks = []
+        for t in track_stations:
+            if set(station_list).issubset(set(t.stations)):
+                # 获取该轨迹的详细信息
+                info = db.query(
+                    FlightTrackRaw.batch_id,
+                    func.count(FlightTrackRaw.id).label('point_count'),
+                    func.min(FlightTrackRaw.timestamp).label('start_time'),
+                    func.max(FlightTrackRaw.timestamp).label('end_time')
+                ).filter(
+                    FlightTrackRaw.batch_id == t.batch_id
+                ).first()
+
+                common_tracks.append(TrackInfo(
+                    batch_id=info.batch_id,
+                    point_count=info.point_count,
+                    start_time=info.start_time,
+                    end_time=info.end_time
+                ))
+
+        return common_tracks
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取共同轨迹失败: {str(e)}"
+        )
+
+
+@router.get("/tasks/{task_id}/detail", response_model=TaskDetailResponse)
+async def get_task_detail_full(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+    include_intermediate: bool = Query(True, description="是否包含中间步骤详细数据"),
+    include_points: bool = Query(False, description="是否包含插值点明细")
+):
+    """
+    获取完整任务详情
+
+    返回任务的完整信息，包括：
+    - 任务基本信息（配置参数、状态、时间等）
+    - 航迹段信息（提取了多少段、每段的时间范围、点数等）
+    - 插值点数据概要（插值前后对比）
+    - 匹配组信息（匹配了多少组、每组的详情）
+    - 最终误差结果（各雷达站的方位角误差、距离误差、俯仰角误差等）
+    - MRRA 分析流程各步骤的说明
+    """
+    try:
+        service = ErrorAnalysisService(db)
+        detail = service.get_task_detail_full(
+            task_id,
+            include_intermediate=include_intermediate,
+            include_points=include_points
+        )
+        return detail
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取任务详情失败: {str(e)}"
+        )
+
+
+def execute_analysis_task(db: Session, task_id: str):
+    """
+    后台执行分析任务的函数
+
+    Args:
+        db: 数据库会话
+        task_id: 任务ID
+    """
+    from core.logging import get_logger
+    logger = get_logger(__name__)
+
+    try:
+        service = ErrorAnalysisService(db)
+        service.execute_analysis(task_id)
+        logger.info(f"后台任务完成: {task_id}")
+    except Exception as e:
+        logger.error(f"后台任务失败: {task_id}, 错误: {str(e)}")

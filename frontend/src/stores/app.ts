@@ -27,7 +27,7 @@ export const useAppStore = defineStore('app', () => {
     const id = ++notificationId
     notifications.value.push({ ...notification, id })
 
-    const duration = notification.duration ?? 3000
+    const duration = notification.duration ?? 5000
     if (duration > 0) {
       setTimeout(() => {
         removeNotification(id)

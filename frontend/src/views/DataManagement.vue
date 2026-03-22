@@ -125,11 +125,16 @@
                 </button>
                 <button
                   class="action-btn danger"
+                  :class="{ deleting: deletingIds.has(file.id) }"
+                  :disabled="deletingIds.has(file.id)"
                   @click="handleDelete(file)"
-                  :title="'删除文件'"
+                  :title="deletingIds.has(file.id) ? '删除中...' : '删除文件'"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <svg v-if="!deletingIds.has(file.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <svg v-else class="spinner-icon" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="32" stroke-linecap="round" />
                   </svg>
                 </button>
               </div>
@@ -253,7 +258,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, onBeforeUnmount, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import AppHeader from '@/components/AppHeader.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -269,9 +274,11 @@ const { token } = storeToRefs(authStore)
 const loading = ref(false)
 const files = ref<FileItem[]>([])
 const fileProgress = ref<Record<number, FileStatusResponse>>({})
+const deletingIds = ref<Set<number>>(new Set())
 const searchQuery = ref('')
 const statusFilter = ref('')
 const categoryFilter = ref('')
+const isPageActive = ref(true)  // 跟踪页面是否活跃
 
 // 上传相关
 const showUploadModal = ref(false)
@@ -347,7 +354,10 @@ const connectFileWebSocket = (fileId: number) => {
       wsConnections.value.delete(fileId)
     },
     onError: (error) => {
-      appStore.error(error)
+      // 只在页面活跃时显示错误
+      if (isPageActive.value) {
+        appStore.error(error, 4000)
+      }
       const file = files.value.find((f) => f.id === fileId)
       if (file) {
         file.status = 'failed'
@@ -473,12 +483,26 @@ const copyShareLink = async () => {
 const handleDelete = async (file: FileItem) => {
   if (!confirm(`确定要删除文件 "${file.filename}" 吗？`)) return
 
+  // 添加删除状态
+  deletingIds.value.add(file.id)
+
   try {
     await filesApi.deleteFile(file.id)
-    appStore.success('文件删除成功')
-    loadFiles()
+
+    // 立即从列表中移除文件（乐观更新）
+    const index = files.value.findIndex(f => f.id === file.id)
+    if (index > -1) {
+      files.value.splice(index, 1)
+    }
+
+    appStore.success('文件删除成功', 5000)
   } catch (error: any) {
-    appStore.error(error.message || '文件删除失败')
+    // 删除失败，移除删除状态
+    deletingIds.value.delete(file.id)
+    appStore.error(error.message || '文件删除失败', 5000)
+  } finally {
+    // 无论成功失败都移除删除状态
+    deletingIds.value.delete(file.id)
   }
 }
 
@@ -525,24 +549,43 @@ const getStatusText = (status: string): string => {
   return statusMap[status] || status
 }
 
+// 定时刷新间隔
+let refreshInterval: ReturnType<typeof setInterval> | null = null
+
 // 组件挂载时加载文件
 onMounted(() => {
   loadFiles()
 
   // 定时刷新处理中的文件状态
-  const refreshInterval = setInterval(() => {
+  refreshInterval = setInterval(() => {
     const hasProcessing = files.value.some((f) => f.status === 'processing')
     if (hasProcessing) {
       loadFiles()
     }
   }, 5000)
+})
 
-  onUnmounted(() => {
-    clearInterval(refreshInterval)
-    // 关闭所有 WebSocket 连接
-    wsConnections.value.forEach((ws) => ws.close())
-    wsConnections.value.clear()
+// 组件卸载前清理
+onBeforeUnmount(() => {
+  // 标记页面即将卸载
+  isPageActive.value = false
+
+  // 关闭所有 WebSocket 连接
+  wsConnections.value.forEach((ws) => {
+    try {
+      ws.close()
+    } catch (e) {
+      // 忽略关闭时的错误
+    }
   })
+  wsConnections.value.clear()
+})
+
+// 组件卸载时清理定时器
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+  }
 })
 </script>
 
@@ -886,6 +929,24 @@ onMounted(() => {
 .action-btn svg {
   width: 1rem;
   height: 1rem;
+}
+
+.action-btn.deleting {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.spinner-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .empty-state {

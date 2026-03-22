@@ -16,7 +16,9 @@ from core.middleware import (
     PerformanceLoggingMiddleware,
 )
 from core.error_handler import register_exception_handlers
-from app.routers import health, auth, files, tracks, zones, analysis, query, websocket
+# Import models to ensure they are registered with Base
+import app.models  # noqa: F401
+from app.routers import health, auth, files, tracks, zones, analysis, query, websocket, error_analysis
 
 
 settings = get_settings()
@@ -90,6 +92,7 @@ app.include_router(zones.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 app.include_router(query.router, prefix="/api")
 app.include_router(websocket.router, prefix="/api")
+app.include_router(error_analysis.router, prefix="/api")
 
 logger.info("All routers registered successfully")
 
