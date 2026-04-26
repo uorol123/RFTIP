@@ -49,6 +49,7 @@ class ErrorAnalysisTask(Base):
     )
     progress = Column(Integer, default=0, comment="进度百分比")
     error_message = Column(Text, nullable=True, comment="错误信息")
+    result_metadata = Column(JSON, nullable=True, comment="分析结果元数据（融合轨迹等）")
 
     # 时间信息
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
@@ -86,7 +87,7 @@ class TrackSegment(Base):
 
     # 航迹信息
     station_id = Column(Integer, nullable=False, comment="雷达站号")
-    track_id = Column(Integer, nullable=False, comment="航迹批号")
+    track_id = Column(String(50), nullable=False, comment="航迹批号")
     start_time = Column(DateTime, nullable=False, comment="开始时间")
     end_time = Column(DateTime, nullable=False, comment="结束时间")
     point_count = Column(Integer, nullable=False, comment="点数")
@@ -181,7 +182,7 @@ class TrackInterpolatedPoint(Base):
 
     # 航迹点信息
     station_id = Column(Integer, nullable=False, comment="雷达站号")
-    track_id = Column(Integer, nullable=False, comment="航迹批号")
+    track_id = Column(String(50), nullable=False, comment="航迹批号")
     time_seconds = Column(Float, nullable=False, comment="时间（秒）")
     timestamp = Column(DateTime, nullable=True, comment="时间戳")
 

@@ -543,7 +543,7 @@ class TrackPreprocessor:
         groups = defaultdict(list)
 
         for track in raw_tracks:
-            key = f"{track.radar_station_id}_{track.track_id}"
+            key = f"{track.radar_station_id}_{track.batch_id}"
             groups[key].append(track)
 
         processed_data = []
@@ -577,23 +577,16 @@ class TrackPreprocessor:
             # 转换为字典格式
             for idx in valid_indices:
                 track = tracks[idx]
-                # 安全解析 raw_data (可能是 None、空字符串或无效 JSON)
-                raw_data = {}
-                if track.raw_data and track.raw_data.strip():
-                    try:
-                        raw_data = json.loads(track.raw_data)
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        raw_data = {}
 
                 processed_data.append({
                     'raw_track_id': track.id,
-                    'track_id': track.track_id,
+                    'track_id': track.batch_id,
                     'timestamp': track.timestamp,
                     'latitude': track.latitude,
                     'longitude': track.longitude,
                     'altitude': track.altitude or 0,
                     'radar_station_id': track.radar_station_id,
-                    'raw_data': raw_data,
+                    'raw_data': {},
                 })
 
         return processed_data

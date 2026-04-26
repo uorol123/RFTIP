@@ -6,9 +6,12 @@
 
 def register_all_algorithms():
     """注册所有算法"""
-    # 导入并注册 MRRA 算法
+    # 多源参考模式
     from app.utils.error_analysis.algorithms.mrra import MrraAlgorithm
+    from app.utils.error_analysis.algorithms.ransac import RansacAlgorithm
+    from app.utils.error_analysis.algorithms.weighted_lstsq import WeightedLstsqAlgorithm
 
-    # 未来添加的算法在这里导入注册:
-    # from app.utils.error_analysis.algorithms.least_squares import LeastSquaresAlgorithm
-    # from app.utils.error_analysis.algorithms.kalman_filter import KalmanFilterAlgorithm
+    # 单源盲测模式
+    from app.utils.error_analysis.algorithms.kalman import KalmanAlgorithm
+    from app.utils.error_analysis.algorithms.particle_filter import ParticleFilterAlgorithm
+    from app.utils.error_analysis.algorithms.spline import SplineAlgorithm

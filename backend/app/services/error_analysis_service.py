@@ -127,20 +127,22 @@ class ErrorAnalysisService:
             # 使用 AlgorithmFactory 创建算法实例
             from app.utils.error_analysis.factory import AlgorithmFactory
 
-            # 如果任务有配置，使用配置；否则使用默认配置
-            algorithm_config = None
-            if task.config:
-                algorithm_config = task.config
+            algorithm_config = task.config or {}
 
             algorithm = AlgorithmFactory.create_algorithm_from_dict(
                 algorithm_name,
-                algorithm_config or {}
+                algorithm_config
             )
 
             logger.info(f"使用算法 {algorithm_name} 执行任务 {task_id}")
 
-            # 执行分析（兼容旧的 MRRA 流程）
-            self._execute_with_legacy_flow(task, algorithm)
+            # 根据算法类型选择执行方式
+            if algorithm_name in ("ransac", "weighted_lstsq", "kalman", "particle_filter", "spline"):
+                # 新算法使用统一的 analyze() 接口
+                self._execute_with_algorithm_interface(task, algorithm)
+            else:
+                # 兼容旧的 MRRA 梯度下降流程
+                self._execute_with_legacy_flow(task, algorithm)
 
             # 完成
             task.status = ErrorAnalysisTaskStatus.COMPLETED
@@ -158,6 +160,41 @@ class ErrorAnalysisService:
             self.db.commit()
             raise
 
+    def _execute_with_algorithm_interface(self, task: ErrorAnalysisTask, algorithm) -> None:
+        """使用算法框架的 analyze() 接口执行分析"""
+        result = algorithm.analyze(
+            radar_station_ids=task.radar_station_ids,
+            track_ids=task.track_ids,
+            db_session=self.db,
+        )
+
+        if result.status == "failed":
+            raise RuntimeError(result.error_message or "算法执行失败")
+
+        # 保存误差结果
+        for station_id, errors in result.errors.items():
+            error_record = ErrorResult(
+                task_id=task.task_id,
+                station_id=station_id,
+                azimuth_error=errors.get("azimuth_error", 0.0),
+                range_error=errors.get("range_error", 0.0),
+                elevation_error=errors.get("elevation_error", 0.0),
+                match_count=result.match_statistics.get("total_match_groups", 0),
+                confidence=result.match_statistics.get("station_weights", {}).get(str(station_id)),
+            )
+            self.db.add(error_record)
+
+        # 保存结果元数据（融合轨迹、离群率等）
+        if result.metadata:
+            task.result_metadata = result.metadata
+
+        if result.match_statistics:
+            if not task.result_metadata:
+                task.result_metadata = {}
+            task.result_metadata["match_statistics"] = result.match_statistics
+
+        self.db.commit()
+
     def _execute_with_legacy_flow(self, task: ErrorAnalysisTask, algorithm) -> None:
         """
         使用旧的 MRRA 流程执行分析（向后兼容）
@@ -166,8 +203,13 @@ class ErrorAnalysisService:
             task: 任务对象
             algorithm: 算法实例
         """
-        # 加载配置
-        config = MrraConfig(**task.config) if task.config else MrraConfig()
+        # 加载配置（过滤掉 MrraConfig 不支持的字段）
+        if task.config:
+            mrra_fields = set(MrraConfig.model_fields.keys())
+            filtered = {k: v for k, v in task.config.items() if k in mrra_fields}
+            config = MrraConfig(**filtered)
+        else:
+            config = MrraConfig()
 
         # 获取选中的雷达站位置
         radar_stations = self.db.query(RadarStation).filter(
@@ -338,7 +380,12 @@ class ErrorAnalysisService:
             for e in error_results
         ]
 
-        config = MrraConfig(**task.config) if task.config else MrraConfig()
+        if task.config:
+            mrra_fields = set(MrraConfig.model_fields.keys())
+            filtered = {k: v for k, v in task.config.items() if k in mrra_fields}
+            config = MrraConfig(**filtered)
+        else:
+            config = MrraConfig()
 
         return ErrorAnalysisResult(
             task_id=task_id,
@@ -526,14 +573,19 @@ class ErrorAnalysisService:
             task_id: 任务ID
             error_results: 误差结果字典
         """
+        match_group_count = error_results.get('match_group_count', 0)
+
         for station_id, errors in error_results['errors'].items():
             result = ErrorResult(
                 task_id=task_id,
                 station_id=station_id,
-                azimuth_error=errors['azimuth_error'],
-                range_error=errors['range_error'],
-                elevation_error=errors['elevation_error'],
-                match_count=error_results['match_group_count']
+                azimuth_error=errors.get('azimuth_error', 0.0),
+                range_error=errors.get('range_error', 0.0),
+                elevation_error=errors.get('elevation_error', 0.0),
+                match_count=match_group_count,
+                confidence=errors.get('confidence'),
+                iterations=errors.get('iterations'),
+                final_cost=errors.get('final_cost'),
             )
             self.db.add(result)
 
@@ -646,7 +698,12 @@ class ErrorAnalysisService:
             processing_time = (task.completed_at - task.started_at).total_seconds()
 
         # 2. 构建流程步骤信息
-        config = ErrorAnalysisConfig(**task.config) if task.config else ErrorAnalysisConfig()
+        if task.config:
+            config_fields = set(ErrorAnalysisConfig.model_fields.keys())
+            filtered = {k: v for k, v in task.config.items() if k in config_fields}
+            config = ErrorAnalysisConfig(**filtered)
+        else:
+            config = ErrorAnalysisConfig()
         process_steps = self._build_process_steps(task, processing_time)
 
         # 3. 获取航迹段数据

@@ -429,34 +429,40 @@ async def get_common_tracks(
     """
     try:
         station_list = [int(s.strip()) for s in station_ids.split(',')]
+        station_set = set(station_list)
 
-        # 找出每个雷达站观测的轨迹
-        from sqlalchemy import func
-
-        # 查询每个batch_id被哪些雷达站观测到
-        track_stations = db.query(
+        # 查询每个 batch_id 被哪些雷达站观测到（兼容 MySQL）
+        track_station_rows = db.query(
             FlightTrackRaw.batch_id,
-            func.array_agg(FlightTrackRaw.radar_station_id.distinct()).label('stations')
+            FlightTrackRaw.radar_station_id
         ).filter(
             FlightTrackRaw.radar_station_id.in_(station_list)
-        ).group_by(
-            FlightTrackRaw.batch_id
-        ).all()
+        ).distinct().all()
+
+        # 按 batch_id 分组统计雷达站
+        from collections import defaultdict
+        batch_stations = defaultdict(set)
+        for row in track_station_rows:
+            batch_stations[row.batch_id].add(row.radar_station_id)
 
         # 筛选出被所有指定雷达站都观测到的轨迹
-        common_tracks = []
-        for t in track_stations:
-            if set(station_list).issubset(set(t.stations)):
-                # 获取该轨迹的详细信息
-                info = db.query(
-                    FlightTrackRaw.batch_id,
-                    func.count(FlightTrackRaw.id).label('point_count'),
-                    func.min(FlightTrackRaw.timestamp).label('start_time'),
-                    func.max(FlightTrackRaw.timestamp).label('end_time')
-                ).filter(
-                    FlightTrackRaw.batch_id == t.batch_id
-                ).first()
+        common_batch_ids = [
+            bid for bid, sids in batch_stations.items()
+            if station_set.issubset(sids)
+        ]
 
+        common_tracks = []
+        for bid in common_batch_ids:
+            info = db.query(
+                FlightTrackRaw.batch_id,
+                func.count(FlightTrackRaw.id).label('point_count'),
+                func.min(FlightTrackRaw.timestamp).label('start_time'),
+                func.max(FlightTrackRaw.timestamp).label('end_time')
+            ).filter(
+                FlightTrackRaw.batch_id == bid
+            ).first()
+
+            if info:
                 common_tracks.append(TrackInfo(
                     batch_id=info.batch_id,
                     point_count=info.point_count,
@@ -627,6 +633,15 @@ async def get_algorithm_presets(
         "high_precision": "高精度配置",
         "fast": "快速分析",
         "coarse": "粗粒度配置",
+        "strict": "严格配置",
+        "loose": "宽松配置",
+        "inverse_variance": "反方差权重",
+        "uniform": "均匀权重",
+        "robust": "鲁棒配置",
+        "smooth": "平滑配置",
+        "responsive": "快速响应",
+        "tight": "紧密贴合",
+        "interpolated": "插值模式",
     }
 
     return {
@@ -663,3 +678,45 @@ async def validate_algorithm_config(
         return {"valid": True, "errors": None}
     except Exception as e:
         return {"valid": False, "errors": [str(e)]}
+
+
+@router.get("/tasks/{task_id}/fused-trajectory")
+async def get_fused_trajectory(
+    task_id: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    获取融合轨迹数据
+
+    - **task_id**: 任务ID
+
+    返回加权融合后的轨迹点列表，仅对 weighted_lstsq 算法任务有效。
+    """
+    try:
+        task = db.query(ErrorAnalysisTask).filter(
+            ErrorAnalysisTask.task_id == task_id
+        ).first()
+
+        if not task:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+        metadata = task.result_metadata or {}
+        fused_trajectory = metadata.get("fused_trajectory", [])
+        match_stats = metadata.get("match_statistics", {})
+
+        return {
+            "task_id": task_id,
+            "algorithm": task.algorithm_name,
+            "fused_trajectory": fused_trajectory,
+            "station_weights": match_stats.get("station_weights", {}),
+            "total_points": len(fused_trajectory),
+            "outlier_removed": match_stats.get("outlier_removed", 0),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取融合轨迹失败: {str(e)}"
+        )

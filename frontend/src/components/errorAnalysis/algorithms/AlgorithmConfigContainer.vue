@@ -46,8 +46,11 @@ const GradientDescentConfig = () => import('./gradient_descent/GradientDescentCo
 // 算法配置组件映射
 const ALGORITHM_CONFIG_COMPONENTS: Record<string, () => Promise<any>> = {
   gradient_descent: () => import('./gradient_descent/GradientDescentConfig.vue'),
-  // 未来可以添加更多算法
-  // least_squares: () => import('./least_squares/LeastSquaresConfig.vue'),
+  ransac: () => import('./ransac/RansacConfig.vue'),
+  weighted_lstsq: () => import('./weighted_lstsq/WeightedLstsqConfig.vue'),
+  kalman: () => import('./kalman/KalmanConfig.vue'),
+  particle_filter: () => import('./particle_filter/ParticleFilterConfig.vue'),
+  spline: () => import('./spline/SplineConfig.vue'),
 }
 
 interface Props {
