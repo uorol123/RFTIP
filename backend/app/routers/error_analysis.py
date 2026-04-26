@@ -274,6 +274,7 @@ async def get_chart_data(
 # ========== 数据查询端点 ==========
 
 from app.models.flight_track import RadarStation, FlightTrackRaw
+from app.models.data_file import DataFile
 from pydantic import BaseModel
 
 class RadarStationInfo(BaseModel):
@@ -307,12 +308,18 @@ async def list_radar_stations(
     db: Annotated[Session, Depends(get_db)]
 ):
     """
-    获取所有雷达站列表
+    获取当前用户拥有的雷达站列表
 
-    返回数据库中所有已配置的雷达站信息
+    仅返回用户自己上传文件产生的雷达站
     """
     try:
-        stations = db.query(RadarStation).all()
+        # 通过 data_files.user_id 过滤，只返回当前用户拥有的雷达站
+        stations = db.query(RadarStation).join(
+            DataFile, RadarStation.file_id == DataFile.id
+        ).filter(
+            DataFile.user_id == current_user.id
+        ).all()
+
         return [
             RadarStationInfo(
                 id=s.id,
@@ -342,9 +349,23 @@ async def get_radar_station_tracks(
 
     - **station_id**: 雷达站ID（数据库主键）
 
-    返回该雷达站观测到的所有飞机批号列表及其时间范围
+    仅返回当前用户文件产生的雷达站的轨迹
     """
     try:
+        # 先检查雷达站是否属于当前用户
+        station = db.query(RadarStation).join(
+            DataFile, RadarStation.file_id == DataFile.id
+        ).filter(
+            RadarStation.id == station_id,
+            DataFile.user_id == current_user.id
+        ).first()
+
+        if not station:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="雷达站不存在或无权访问"
+            )
+
         # 查询该雷达站的所有轨迹点
         tracks = db.query(
             FlightTrackRaw.batch_id,
@@ -366,6 +387,8 @@ async def get_radar_station_tracks(
             )
             for t in tracks
         ]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -384,15 +407,22 @@ async def get_tracks_time_range(
 
     - **batch_ids**: 逗号分隔的轨迹批号列表
 
-    返回这些轨迹的最早和最晚时间
+    仅返回当前用户文件的轨迹时间范围
     """
     try:
         batch_list = [b.strip() for b in batch_ids.split(',')]
+
+        # 只查询当前用户文件产生的轨迹
         result = db.query(
             func.min(FlightTrackRaw.timestamp).label('start_time'),
             func.max(FlightTrackRaw.timestamp).label('end_time')
+        ).join(
+            RadarStation, FlightTrackRaw.radar_station_id == RadarStation.id
+        ).join(
+            DataFile, RadarStation.file_id == DataFile.id
         ).filter(
-            FlightTrackRaw.batch_id.in_(batch_list)
+            FlightTrackRaw.batch_id.in_(batch_list),
+            DataFile.user_id == current_user.id
         ).first()
 
         if not result or not result.start_time:
@@ -425,11 +455,28 @@ async def get_common_tracks(
 
     - **station_ids**: 逗号分隔的雷达站ID列表
 
-    返回这些雷达站同时观测到的飞机批号列表
+    仅返回当前用户文件产生的雷达站的共同轨迹
     """
     try:
         station_list = [int(s.strip()) for s in station_ids.split(',')]
         station_set = set(station_list)
+
+        # 先验证所有雷达站都属于当前用户
+        user_station_ids = db.query(RadarStation.id).join(
+            DataFile, RadarStation.file_id == DataFile.id
+        ).filter(
+            DataFile.user_id == current_user.id,
+            RadarStation.id.in_(station_list)
+        ).all()
+
+        user_station_set = set(s.id for s in user_station_ids)
+
+        # 检查是否有雷达站不属于当前用户
+        if user_station_set != station_set:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="部分雷达站无权访问"
+            )
 
         # 查询每个 batch_id 被哪些雷达站观测到（兼容 MySQL）
         track_station_rows = db.query(
