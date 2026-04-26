@@ -156,9 +156,22 @@
             </div>
             <div class="history-info">
               <div class="history-id">任务 #{{ task.id }}</div>
-              <div class="history-time">{{ formatTime(task.created_at) }}</div>
+              <div class="history-meta">
+                <span class="history-algorithm">{{ task.algorithm_name || 'gradient_descent' }}</span>
+                <span class="history-time">{{ formatTime(task.created_at) }}</span>
+              </div>
+              <div class="history-details">
+                <div class="detail-item">
+                  <span class="detail-label">雷达站:</span>
+                  <span class="detail-value">{{ task.radar_station_ids?.join(', ') || '-' }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">轨迹:</span>
+                  <span class="detail-value">{{ task.track_ids?.slice(0, 3).join(', ') }}{{ task.track_ids?.length > 3 ? '...' : '' }}</span>
+                </div>
+              </div>
             </div>
-            <div class="history-progress" v-if="task.status === 'pending'">
+            <div class="history-progress" v-if="task.status === 'pending' || task.status === 'extracting' || task.status === 'interpolating' || task.status === 'matching' || task.status === 'calculating'">
               {{ task.progress }}%
             </div>
             <div class="history-actions">
@@ -515,6 +528,46 @@ onUnmounted(() => {
 .history-time {
   font-size: 0.8125rem;
   color: var(--text-muted);
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.history-algorithm {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: 0.25rem;
+  color: var(--text-secondary);
+}
+
+.history-details {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.detail-label {
+  color: var(--text-muted);
+  min-width: 3rem;
+}
+
+.detail-value {
+  color: var(--text-secondary);
+  font-family: monospace;
+  font-size: 0.75rem;
 }
 
 .history-progress {
