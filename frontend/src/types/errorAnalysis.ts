@@ -170,7 +170,7 @@ export const TASK_STATUS_INFO: Record<TaskStatus, { label: string; color: string
 export interface ErrorAnalysisTask {
   id: number
   task_id: string
-  radar_station_ids: number[]
+  radar_station_ids: string[]  // 雷达站站号（用于显示）
   track_ids: string[]
   user_id: number
   status: TaskStatus

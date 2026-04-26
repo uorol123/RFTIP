@@ -69,7 +69,7 @@ class ErrorAnalysisTaskResponse(BaseModel):
     """误差分析任务响应"""
     id: int
     task_id: str
-    radar_station_ids: List[int]  # 雷达站ID列表
+    radar_station_ids: List[str]  # 雷达站站号列表（用于显示）
     track_ids: List[str]  # 轨迹编号列表
     user_id: int
     algorithm_name: Optional[str] = None  # 算法名称

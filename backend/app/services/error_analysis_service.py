@@ -637,10 +637,18 @@ class ErrorAnalysisService:
         Returns:
             任务响应
         """
+        # 获取雷达站的 station_id 字符串用于显示
+        station_ids_display = task.radar_station_ids or []
+        if task.radar_station_ids:
+            stations = self.db.query(RadarStation.station_id).filter(
+                RadarStation.id.in_(task.radar_station_ids)
+            ).all()
+            station_ids_display = [s.station_id for s in stations]
+
         return ErrorAnalysisTaskResponse(
             id=task.id,
             task_id=task.task_id,
-            radar_station_ids=task.radar_station_ids or [],
+            radar_station_ids=station_ids_display,  # 返回 station_id 字符串用于显示
             track_ids=task.track_ids or [],
             user_id=task.user_id,
             algorithm_name=task.algorithm_name,
