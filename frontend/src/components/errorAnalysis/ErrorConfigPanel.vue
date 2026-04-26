@@ -180,7 +180,7 @@
             {{ getStationName(sid) }}
           </span>
         </div>
-        <div v-if="involvedStationIds.length < 2" class="warning-hint">
+        <div v-if="!store.isSingleSourceMode && involvedStationIds.length < 2" class="warning-hint">
           至少需要2个雷达站才能进行分析
         </div>
       </div>
