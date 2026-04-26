@@ -69,6 +69,7 @@ export interface CreateAnalysisRequest {
   track_ids: string[]
   start_time?: string
   end_time?: string
+  algorithm: string  // 算法名称
   config?: Partial<ErrorAnalysisConfig>
 }
 

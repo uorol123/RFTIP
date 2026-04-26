@@ -306,6 +306,7 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
         track_ids: selectedTracks.value.map(t => t.batch_id),
         start_time: timeRange.value?.start_time,
         end_time: timeRange.value?.end_time,
+        algorithm: selectedAlgorithm.value?.name || 'gradient_descent',
         config: { ...config.value },
       }
       const task = await errorAnalysisApi.createAnalysis(request)
