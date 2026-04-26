@@ -54,7 +54,9 @@
     <div v-if="currentStep === 1" class="step-content">
       <div class="step-header">
         <h4 class="section-title">选择雷达站</h4>
-        <p class="section-hint">选择进行误差分析的雷达站（至少选择 2 个）</p>
+        <p class="section-hint">
+          {{ store.isSingleSourceMode ? '选择进行平滑处理的雷达站（单站）' : '选择进行误差分析的雷达站（至少选择 2 个）' }}
+        </p>
       </div>
       <div class="radar-station-list">
         <div
@@ -93,7 +95,9 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
           </svg>
         </button>
-        <p v-if="!canGoNext(1)" class="step-hint">请选择至少 2 个雷达站</p>
+        <p v-if="!canGoNext(1)" class="step-hint">
+          {{ store.isSingleSourceMode ? '请选择 1 个雷达站' : '请选择至少 2 个雷达站' }}
+        </p>
       </div>
     </div>
 
@@ -124,7 +128,7 @@
           class="track-item"
           :class="{
             selected: isTrackSelected(track.batch_id),
-            disabled: track.station_ids.length < 2
+            disabled: store.isSingleSourceMode ? false : track.station_ids.length < 2
           }"
           @click="toggleTrack(track)"
         >
@@ -136,7 +140,7 @@
           <div class="track-info">
             <div class="track-header">
               <span class="track-id">{{ track.batch_id }}</span>
-              <span v-if="track.station_ids.length < 2" class="warning-badge">
+              <span v-if="!store.isSingleSourceMode && track.station_ids.length < 2" class="warning-badge">
                 只有一个雷达站观测，不可选
               </span>
             </div>
@@ -201,12 +205,14 @@
     <!-- 步骤3: 确认并开始 -->
     <div v-if="currentStep === 3" class="step-content">
       <div class="step-header">
-        <h4 class="section-title">确认并开始分析</h4>
-        <p class="section-hint">确认配置参数后开始误差分析</p>
+        <h4 class="section-title">{{ store.isSingleSourceMode ? '确认并开始平滑' : '确认并开始分析' }}</h4>
+        <p class="section-hint">
+          {{ store.isSingleSourceMode ? '选择平滑算法参数后开始处理轨迹' : '确认配置参数后开始误差分析' }}
+        </p>
       </div>
 
-      <!-- 参数预设 -->
-      <div class="subsection">
+      <!-- 参数预设（多源参考模式显示） -->
+      <div v-if="!store.isSingleSourceMode" class="subsection">
         <h5 class="subsection-title">参数预设方案</h5>
         <div class="preset-grid">
           <button
@@ -222,65 +228,85 @@
         </div>
       </div>
 
-      <!-- 基础参数 -->
+      <!-- 基础参数（多源参考模式显示MRRA参数，单源盲测显示各自的参数） -->
       <div class="subsection">
-        <h5 class="subsection-title">基础参数</h5>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">网格分辨率（度）</label>
-            <input
-              v-model.number="localConfig.grid_resolution"
-              type="number"
-              step="0.01"
-              min="0.01"
-              max="1"
-              class="form-input"
-              :disabled="store.isTaskRunning"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label">时间窗口（秒）</label>
-            <input
-              v-model.number="localConfig.time_window"
-              type="number"
-              step="10"
-              min="10"
-              max="600"
-              class="form-input"
-              :disabled="store.isTaskRunning"
-            />
+        <h5 class="subsection-title">{{ store.isSingleSourceMode ? '平滑参数' : '基础参数' }}</h5>
+        <div v-if="store.isSingleSourceMode">
+          <!-- 单源盲测参数: min_track_points -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">最小航迹点数</label>
+              <input
+                v-model.number="localConfig.min_track_points"
+                type="number"
+                step="1"
+                min="2"
+                max="100"
+                class="form-input"
+                :disabled="store.isTaskRunning"
+              />
+            </div>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">匹配距离阈值（度）</label>
-            <input
-              v-model.number="localConfig.match_distance_threshold"
-              type="number"
-              step="0.01"
-              min="0.01"
-              max="1"
-              class="form-input"
-              :disabled="store.isTaskRunning"
-            />
+        <div v-else>
+          <!-- 多源参考参数 -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">网格分辨率（度）</label>
+              <input
+                v-model.number="localConfig.grid_resolution"
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="1"
+                class="form-input"
+                :disabled="store.isTaskRunning"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label">时间窗口（秒）</label>
+              <input
+                v-model.number="localConfig.time_window"
+                type="number"
+                step="10"
+                min="10"
+                max="600"
+                class="form-input"
+                :disabled="store.isTaskRunning"
+              />
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">最小航迹点数</label>
-            <input
-              v-model.number="localConfig.min_track_points"
-              type="number"
-              step="1"
-              min="3"
-              max="100"
-              class="form-input"
-              :disabled="store.isTaskRunning"
-            />
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">匹配距离阈值（度）</label>
+              <input
+                v-model.number="localConfig.match_distance_threshold"
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="1"
+                class="form-input"
+                :disabled="store.isTaskRunning"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label">最小航迹点数</label>
+              <input
+                v-model.number="localConfig.min_track_points"
+                type="number"
+                step="1"
+                min="3"
+                max="100"
+                class="form-input"
+                :disabled="store.isTaskRunning"
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- 高级配置 -->
-      <div v-if="showAdvanced" class="subsection advanced">
+      <!-- 高级配置（仅多源参考模式显示） -->
+      <div v-if="showAdvanced && !store.isSingleSourceMode" class="subsection advanced">
         <h5 class="subsection-title">代价函数权重</h5>
         <div class="form-row">
           <div class="form-group">
@@ -452,14 +478,23 @@ const steps = [
 function canGoNext(step: number): boolean {
   switch (step) {
     case 0: return !!store.selectedAlgorithm
-    case 1: return selectedStationIds.value.length >= 2
-    case 2: return selectedTrackIds.value.length > 0 && involvedStationIds.value.length >= 2
+    case 1:
+      if (store.isSingleSourceMode) {
+        return selectedStationIds.value.length === 1
+      }
+      return selectedStationIds.value.length >= 2
+    case 2:
+      if (store.isSingleSourceMode) {
+        return selectedTrackIds.value.length > 0
+      }
+      return selectedTrackIds.value.length > 0 && involvedStationIds.value.length >= 2
     default: return false
   }
 }
 
 const step2Hint = computed(() => {
   if (selectedTrackIds.value.length === 0) return '请选择至少 1 条航迹'
+  if (store.isSingleSourceMode) return ''
   if (involvedStationIds.value.length < 2) return '选中的轨迹至少需要 2 个雷达站观测'
   return ''
 })
@@ -493,10 +528,14 @@ const loadingTracks = ref(false)
 const hasLoadedTracks = ref(false)
 const selectedTrackIds = ref<string[]>([])
 
-const localConfig = ref(store.config)
+// 单源盲测模式隐藏MRRA相关参数
+const isShowMrraParams = computed(() => !store.isSingleSourceMode)
+
+const localConfig = ref<Record<string, any>>({})
 
 watchEffect(() => {
-  localConfig.value = store.config
+  // 使用算法特定的配置
+  localConfig.value = { ...store.currentAlgorithmConfig }
 })
 
 const optimizationStepsStr = computed({
@@ -529,6 +568,11 @@ const presetInfo: Record<PresetProfile, { label: string; description: string }> 
 const selectedStationIds = computed(() => store.selectedRadarStations.map(s => s.id))
 
 const involvedStationIds = computed(() => {
+  // 单源模式：直接返回所选雷达站（只有一个）
+  if (store.isSingleSourceMode) {
+    return selectedStationIds.value
+  }
+  // 多源模式：从轨迹中统计涉及的雷达站
   const stationIds = new Set<number>()
   for (const trackId of selectedTrackIds.value) {
     const track = trackList.value.find(t => t.batch_id === trackId)
@@ -540,10 +584,9 @@ const involvedStationIds = computed(() => {
 })
 
 const canStartAnalysis = computed(() => {
-  return (
-    selectedTrackIds.value.length > 0 &&
-    involvedStationIds.value.length >= 2
-  )
+  if (selectedTrackIds.value.length === 0) return false
+  if (store.isSingleSourceMode) return true
+  return involvedStationIds.value.length >= 2
 })
 
 async function loadRadarStations() {
@@ -555,7 +598,14 @@ async function loadRadarStations() {
 }
 
 async function loadTracksForSelectedStations() {
-  if (selectedStationIds.value.length < 2) {
+  // 单源模式只需一个雷达站
+  if (selectedStationIds.value.length < 1) {
+    appStore.warning('请先选择至少1个雷达站')
+    return
+  }
+
+  // 多源模式需要至少2个雷达站
+  if (!store.isSingleSourceMode && selectedStationIds.value.length < 2) {
     appStore.warning('请先选择至少2个雷达站')
     return
   }
@@ -566,6 +616,19 @@ async function loadTracksForSelectedStations() {
   trackList.value = []
 
   try {
+    // 单源模式：直接加载所选雷达站的轨迹
+    if (store.isSingleSourceMode) {
+      const stationId = selectedStationIds.value[0]
+      const tracks = await store.loadRadarStationTracks(stationId)
+      trackList.value = tracks.map(t => ({
+        ...t,
+        station_ids: [stationId],
+      }))
+      loadingTracks.value = false
+      return
+    }
+
+    // 多源模式：查找多站共同观测的轨迹
     const stationTracks: Map<string, Set<string>> = new Map()
 
     for (const stationId of selectedStationIds.value) {

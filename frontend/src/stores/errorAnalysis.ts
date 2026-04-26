@@ -142,6 +142,21 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
     selectedAlgorithm.value?.display_name || '未选择算法'
   )
 
+  // 算法模式: 'multi_source' (多源参考) 或 'single_source' (单源盲测)
+  const algorithmMode = computed(() => {
+    const name = selectedAlgorithm.value?.name || ''
+    if (['kalman', 'particle_filter', 'spline'].includes(name)) {
+      return 'single_source'
+    }
+    return 'multi_source'
+  })
+
+  // 是否为单源盲测模式
+  const isSingleSourceMode = computed(() => algorithmMode.value === 'single_source')
+
+  // 是否为多源参考模式
+  const isMultiSourceMode = computed(() => algorithmMode.value === 'multi_source')
+
   const hasValidAlgorithmConfig = computed(() => {
     if (!selectedAlgorithm.value || !currentConfigSchema.value) {
       return false
@@ -301,13 +316,14 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
 
     taskLoading.value = true
     try {
+      // 使用算法特定的配置（currentAlgorithmConfig）而非通用配置（config）
       const request: CreateAnalysisRequest = {
         radar_station_ids: selectedRadarStations.value.map(s => s.id),
         track_ids: selectedTracks.value.map(t => t.batch_id),
         start_time: timeRange.value?.start_time,
         end_time: timeRange.value?.end_time,
         algorithm: selectedAlgorithm.value?.name || 'gradient_descent',
-        config: { ...config.value },
+        config: { ...currentAlgorithmConfig.value },
       }
       const task = await errorAnalysisApi.createAnalysis(request)
       currentTask.value = task
@@ -665,6 +681,9 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
     isTaskFailed,
     taskProgress,
     currentAlgorithmName,
+    algorithmMode,
+    isSingleSourceMode,
+    isMultiSourceMode,
     hasValidAlgorithmConfig,
 
     // 数据查询操作
