@@ -1,7 +1,8 @@
 """
 误差分析API路由
 
-提供MRRA误差分析功能的API接口
+提供误差分析功能的API接口
+算法：基于梯度下降的迭代寻优算法
 """
 from typing import Annotated, List, Optional
 from datetime import datetime
@@ -528,3 +529,137 @@ def execute_analysis_task(db: Session, task_id: str):
         logger.info(f"后台任务完成: {task_id}")
     except Exception as e:
         logger.error(f"后台任务失败: {task_id}, 错误: {str(e)}")
+
+
+# ========== 算法管理端点 ==========
+
+from app.utils.error_analysis import registry, AlgorithmFactory
+
+
+@router.get("/algorithms")
+async def list_algorithms(
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)]
+):
+    """
+    获取所有可用的误差分析算法
+
+    返回系统中所有已注册的算法列表，包括：
+    - 算法名称
+    - 版本号
+    - 显示名称
+    - 描述
+    - 是否支持俯仰角误差计算
+    """
+    return {
+        "algorithms": registry.list_algorithms()
+    }
+
+
+@router.get("/algorithms/{algorithm_name}")
+async def get_algorithm_info(
+    algorithm_name: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)]
+):
+    """
+    获取指定算法的详细信息
+
+    - **algorithm_name**: 算法名称（如：gradient_descent）
+    """
+    info = AlgorithmFactory.get_algorithm_info(algorithm_name)
+    if info is None:
+        available = ", ".join([alg["name"] for alg in registry.list_algorithms()])
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"算法不存在: '{algorithm_name}'. 可用算法: {available}"
+        )
+    return info
+
+
+@router.get("/algorithms/{algorithm_name}/config-schema")
+async def get_algorithm_config_schema(
+    algorithm_name: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)]
+):
+    """
+    获取算法配置的 JSON Schema（用于前端动态生成表单）
+
+    - **algorithm_name**: 算法名称
+
+    返回配置参数的JSON Schema，前端可以据此自动生成配置表单
+    """
+    algorithm_class = registry.get(algorithm_name)
+    if algorithm_class is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"算法不存在: {algorithm_name}"
+        )
+
+    # 创建临时实例以获取 schema
+    temp = AlgorithmFactory.create_algorithm(algorithm_name)
+    return temp.get_config_schema()
+
+
+@router.get("/algorithms/{algorithm_name}/presets")
+async def get_algorithm_presets(
+    algorithm_name: str,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)]
+):
+    """
+    获取算法的预设配置方案
+
+    - **algorithm_name**: 算法名称
+
+    返回该算法的所有预设配置，如：标准配置、高精度配置、快速配置等
+    """
+    algorithm_class = registry.get(algorithm_name)
+    if algorithm_class is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"算法不存在: {algorithm_name}"
+        )
+
+    temp = AlgorithmFactory.create_algorithm(algorithm_name)
+    presets = temp.get_config_preset_profiles()
+
+    # 预设名称的中文显示
+    PRESET_DISPLAY_NAMES = {
+        "standard": "标准配置",
+        "high_precision": "高精度配置",
+        "fast": "快速分析",
+        "coarse": "粗粒度配置",
+    }
+
+    return {
+        "algorithm": algorithm_name,
+        "presets": [
+            {
+                "name": key,
+                "display_name": PRESET_DISPLAY_NAMES.get(key, key),
+                "config": preset.model_dump() if hasattr(preset, 'model_dump') else preset
+            }
+            for key, preset in presets.items()
+        ]
+    }
+
+
+@router.post("/algorithms/{algorithm_name}/validate-config")
+async def validate_algorithm_config(
+    algorithm_name: str,
+    config: dict,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)]
+):
+    """
+    验证算法配置
+
+    - **algorithm_name**: 算法名称
+    - **config**: 待验证的配置参数
+
+    返回配置是否有效，如果无效则返回错误信息
+    """
+    try:
+        algorithm = AlgorithmFactory.create_algorithm_from_dict(
+            algorithm_name, config
+        )
+        return {"valid": True, "errors": None}
+    except Exception as e:
+        return {"valid": False, "errors": [str(e)]}

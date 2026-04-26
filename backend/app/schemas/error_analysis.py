@@ -21,9 +21,9 @@ class ErrorAnalysisTaskStatus(str, Enum):
 class CostWeights(BaseModel):
     """代价函数权重配置"""
     variance: float = Field(default=100.0, description="方差权重")
-    azimuth: float = Field(default=0.15, description="方位角误差权重")
-    range: float = Field(default=6e-7, description="距离误差权重")
-    elevation: float = Field(default=0.1, description="俯仰角误差权重")
+    azimuth_error_square: float = Field(default=0.15, description="方位角误差平方项权重（度^2）")
+    range_error_square: float = Field(default=6e-7, description="距离误差平方项权重（米^2）")
+    elevation_error_square: float = Field(default=0.1, description="俯仰角误差平方项权重（度^2）")
 
 
 class ErrorAnalysisConfig(BaseModel):
@@ -33,9 +33,9 @@ class ErrorAnalysisConfig(BaseModel):
     match_distance_threshold: float = Field(default=0.12, ge=0.01, le=1.0, description="匹配距离阈值（度）")
     min_track_points: int = Field(default=10, ge=3, le=100, description="最小航迹点数")
     optimization_steps: List[float] = Field(default=[0.1, 0.01], description="方位角优化步长序列")
-    range_optimization_steps: List[int] = Field(
-        default=[1000, 800, 500, 300, 200, 100, 50, 20, 10],
-        description="距离优化步长序列"
+    range_optimization_steps: List[float] = Field(
+        default=[1000, 800, 500, 200, 100, 50, 20],
+        description="距离优化步长序列（米）"
     )
     cost_weights: CostWeights = Field(default_factory=CostWeights, description="代价函数权重")
     max_match_groups: int = Field(default=15000, ge=1000, le=100000, description="最大匹配组数")
@@ -61,6 +61,7 @@ class ErrorAnalysisRequest(BaseModel):
     track_ids: List[str] = Field(..., min_length=1, description="轨迹编号列表（如 '100081'）")
     start_time: Optional[datetime] = Field(default=None, description="分析开始时间")
     end_time: Optional[datetime] = Field(default=None, description="分析结束时间")
+    algorithm: str = Field(default="gradient_descent", description="算法名称（如：gradient_descent）")
     config: Optional[ErrorAnalysisConfig] = Field(default=None, description="分析配置参数")
 
 
@@ -71,6 +72,7 @@ class ErrorAnalysisTaskResponse(BaseModel):
     radar_station_ids: List[int]  # 雷达站ID列表
     track_ids: List[str]  # 轨迹编号列表
     user_id: int
+    algorithm_name: Optional[str] = None  # 算法名称
     status: ErrorAnalysisTaskStatus
     progress: int
     error_message: Optional[str] = None

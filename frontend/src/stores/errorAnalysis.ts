@@ -1,7 +1,8 @@
 /**
- * MRRA 误差分析状态管理 (新版)
+ * 误差分析状态管理
+ * 支持多算法架构
  *
- * 新工作流: 选择雷达站 -> 选择飞机轨迹 -> 选择时间范围 -> 开始分析
+ * 新工作流: 选择算法 -> 选择雷达站 -> 选择飞机轨迹 -> 选择时间范围 -> 开始分析
  */
 
 import { defineStore } from 'pinia'
@@ -19,12 +20,18 @@ import type {
   PresetProfile,
   TaskDetailResponse,
 } from '@/types/errorAnalysis'
+import type {
+  AlgorithmInfo,
+  AlgorithmConfigSchema,
+  PresetConfig,
+} from '@/types/errorAnalysis/algorithms'
 import {
   errorAnalysisApi,
   type CreateAnalysisRequest,
   type TaskListParams,
   type MatchGroupParams,
 } from '@/api/errorAnalysis'
+import { algorithmsApi } from '@/api/errorAnalysis/algorithms'
 import { DEFAULT_ERROR_ANALYSIS_CONFIG, PRESET_PROFILES } from '@/types/errorAnalysis'
 
 export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
@@ -73,6 +80,26 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
   const taskDetail = ref<TaskDetailResponse | null>(null)
   const taskDetailLoading = ref(false)
 
+  // ========== 算法相关状态 ==========
+  // 可用算法列表
+  const availableAlgorithms = ref<AlgorithmInfo[]>([])
+  const algorithmsLoading = ref(false)
+
+  // 当前选择的算法
+  const selectedAlgorithm = ref<AlgorithmInfo | null>(null)
+
+  // 当前算法的配置 Schema
+  const currentConfigSchema = ref<AlgorithmConfigSchema | null>(null)
+
+  // 当前算法的预设配置
+  const currentPresets = ref<PresetConfig[]>([])
+
+  // 当前算法配置（动态）
+  const currentAlgorithmConfig = ref<Record<string, any>>({})
+
+  // 选择的预设
+  const selectedPreset = ref<string | ''>('')
+
   // ========== 计算属性 ==========
 
   const hasValidSelection = computed(() => {
@@ -108,6 +135,24 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
 
   const taskProgress = computed(() => {
     return currentTask.value?.progress ?? 0
+  })
+
+  // 算法相关计算属性
+  const currentAlgorithmName = computed(() =>
+    selectedAlgorithm.value?.display_name || '未选择算法'
+  )
+
+  const hasValidAlgorithmConfig = computed(() => {
+    if (!selectedAlgorithm.value || !currentConfigSchema.value) {
+      return false
+    }
+
+    // 检查必填字段
+    const required = currentConfigSchema.value.required || []
+    return required.every(field =>
+      currentAlgorithmConfig.value[field] !== undefined &&
+      currentAlgorithmConfig.value[field] !== null
+    )
   })
 
   // ========== 数据查询操作 ==========
@@ -406,6 +451,110 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
     }
   }
 
+  // ========== 算法相关操作 ==========
+
+  /**
+   * 加载可用算法列表
+   */
+  async function loadAlgorithms() {
+    algorithmsLoading.value = true
+    try {
+      const response = await algorithmsApi.listAlgorithms()
+      availableAlgorithms.value = response.algorithms
+      return response.algorithms
+    } catch (error: any) {
+      console.error('Failed to load algorithms:', error)
+      throw error
+    } finally {
+      algorithmsLoading.value = false
+    }
+  }
+
+  /**
+   * 选择算法
+   */
+  async function selectAlgorithm(algorithmName: string) {
+    const algorithm = availableAlgorithms.value.find(a => a.name === algorithmName)
+    if (!algorithm) {
+      throw new Error(`算法不存在: ${algorithmName}`)
+    }
+
+    selectedAlgorithm.value = algorithm
+
+    // 加载配置 Schema 和预设
+    await Promise.all([
+      loadAlgorithmConfigSchema(algorithmName),
+      loadAlgorithmPresets(algorithmName),
+    ])
+
+    // 重置配置为默认值
+    resetAlgorithmConfigToDefault()
+  }
+
+  /**
+   * 加载算法配置 Schema
+   */
+  async function loadAlgorithmConfigSchema(algorithmName: string) {
+    try {
+      currentConfigSchema.value = await algorithmsApi.getAlgorithmConfigSchema(
+        algorithmName
+      )
+    } catch (error: any) {
+      console.error('Failed to load config schema:', error)
+      currentConfigSchema.value = null
+    }
+  }
+
+  /**
+   * 加载算法预设配置
+   */
+  async function loadAlgorithmPresets(algorithmName: string) {
+    try {
+      const response = await algorithmsApi.getAlgorithmPresets(algorithmName)
+      currentPresets.value = response.presets
+    } catch (error: any) {
+      console.error('Failed to load presets:', error)
+      currentPresets.value = []
+    }
+  }
+
+  /**
+   * 重置算法配置为默认值
+   */
+  function resetAlgorithmConfigToDefault() {
+    if (!currentConfigSchema.value) return
+
+    const config: Record<string, any> = {}
+    for (const [key, schema] of Object.entries(currentConfigSchema.value.properties)) {
+      config[key] = schema.default !== undefined ? schema.default : null
+    }
+    currentAlgorithmConfig.value = config
+    selectedPreset.value = ''
+  }
+
+  /**
+   * 应用预设配置
+   */
+  function applyAlgorithmPreset(presetName: string) {
+    const preset = currentPresets.value.find(p => p.name === presetName)
+    if (!preset) {
+      throw new Error(`预设不存在: ${presetName}`)
+    }
+
+    currentAlgorithmConfig.value = { ...preset.config }
+    selectedPreset.value = presetName
+  }
+
+  /**
+   * 更新算法配置
+   */
+  function updateAlgorithmConfig(updates: Record<string, any>) {
+    currentAlgorithmConfig.value = {
+      ...currentAlgorithmConfig.value,
+      ...updates
+    }
+  }
+
   // ========== 轮询控制 ==========
 
   /**
@@ -498,6 +647,15 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
     taskDetail,
     taskDetailLoading,
 
+    // 算法相关状态
+    availableAlgorithms,
+    algorithmsLoading,
+    selectedAlgorithm,
+    currentConfigSchema,
+    currentPresets,
+    currentAlgorithmConfig,
+    selectedPreset,
+
     // 计算属性
     hasValidSelection,
     hasValidConfig,
@@ -505,6 +663,8 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
     isTaskCompleted,
     isTaskFailed,
     taskProgress,
+    currentAlgorithmName,
+    hasValidAlgorithmConfig,
 
     // 数据查询操作
     loadRadarStations,
@@ -522,6 +682,15 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
     updateConfig,
     applyPreset,
     resetConfig,
+
+    // 算法相关操作
+    loadAlgorithms,
+    selectAlgorithm,
+    loadAlgorithmConfigSchema,
+    loadAlgorithmPresets,
+    resetAlgorithmConfigToDefault,
+    applyAlgorithmPreset,
+    updateAlgorithmConfig,
 
     // 任务操作
     createAnalysis,

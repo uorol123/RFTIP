@@ -12,7 +12,7 @@ from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.models.data_file import DataFile
-from app.models.flight_track import FlightTrackRaw
+from app.models.flight_track import FlightTrackRaw, RadarStation
 from app.schemas.file import DataFileResponse, FileUploadResponse
 from app.services.minio_service import minio_service
 from core.config import get_settings
@@ -780,7 +780,11 @@ def delete_file(file_id: int, db: Session, user_id: int) -> bool:
         logger = get_logger(__name__)
         logger.warning(f"MinIO 文件删除失败，继续删除数据库记录: {e}")
 
-    # 删除数据库记录（级联删除关联的轨迹数据）
+    # 删除关联的轨迹数据（按依赖顺序：先删 FlightTrackRaw，再删 RadarStation）
+    db.query(FlightTrackRaw).filter(FlightTrackRaw.file_id == file_id).delete(synchronize_session=False)
+    db.query(RadarStation).filter(RadarStation.file_id == file_id).delete(synchronize_session=False)
+
+    # 删除数据库记录
     db.delete(db_file)
     db.commit()
     return True

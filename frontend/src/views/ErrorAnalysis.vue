@@ -7,7 +7,7 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">误差分析</h1>
-          <p class="page-subtitle">MRRA 多雷达站参考分析</p>
+          <p class="page-subtitle">{{ store.currentAlgorithmName }}</p>
         </div>
         <div class="header-actions">
           <button class="btn btn-secondary" @click="showHistory = true">

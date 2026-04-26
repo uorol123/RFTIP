@@ -65,6 +65,14 @@ class TrackExtractor:
         max_xy = np.ceil(max_coord / config.grid_resolution).astype(np.int32) + 1
         self.dim = max_xy - self.min_xy
 
+        # 确保网格至少为 3x3（保证 3x3 邻域检测正常工作）
+        if self.dim[0] < 3:
+            logger.warning(f"网格X维度 {self.dim[0]} < 3，自动扩展为 3")
+            self.dim[0] = 3
+        if self.dim[1] < 3:
+            logger.warning(f"网格Y维度 {self.dim[1]} < 3，自动扩展为 3")
+            self.dim[1] = 3
+
         # 初始化网格数据
         # grid_data[x][y] 存储落在该网格内的航迹点
         self.grid_data: List[List[List[TrackPoint]]] = [

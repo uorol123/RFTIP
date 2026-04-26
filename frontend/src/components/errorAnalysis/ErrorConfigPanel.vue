@@ -1,28 +1,61 @@
 <template>
   <div class="error-config-panel">
-    <div class="config-header">
-      <h3 class="config-title">误差分析配置</h3>
-      <div class="config-actions">
-        <button
-          v-if="showAdvanced"
-          class="btn btn-secondary btn-sm"
-          @click="resetToDefaults"
-        >
-          重置
+    <!-- 步骤指示器 -->
+    <div class="stepper">
+      <div
+        v-for="(step, index) in steps"
+        :key="step.key"
+        class="stepper-item"
+        :class="{
+          active: currentStep === index,
+          completed: index < currentStep,
+          clickable: index <= currentStep,
+        }"
+        @click="goToStep(index)"
+      >
+        <div class="stepper-dot">
+          <svg v-if="index < currentStep" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+          </svg>
+          <span v-else>{{ index + 1 }}</span>
+        </div>
+        <span class="stepper-label">{{ step.label }}</span>
+      </div>
+    </div>
+
+    <!-- 步骤0: 选择算法 -->
+    <div v-if="currentStep === 0" class="step-content">
+      <AlgorithmSelector
+        :disabled="store.isTaskRunning"
+        @update:algorithm="handleAlgorithmChange"
+        @update:config="handleAlgorithmConfigChange"
+      />
+      <div v-if="store.selectedAlgorithm" class="algorithm-config-wrapper">
+        <AlgorithmConfigContainer
+          :disabled="store.isTaskRunning"
+          :selected-station-count="selectedStationIds.length"
+          :selected-track-count="selectedTrackIds.length"
+          @update:config="handleAlgorithmConfigUpdate"
+          @preset-applied="handlePresetApplied"
+        />
+      </div>
+      <div class="step-footer">
+        <button class="btn btn-primary" :disabled="!canGoNext(0)" @click="nextStep">
+          下一步
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
         </button>
-        <button
-          class="btn btn-secondary btn-sm"
-          @click="showAdvanced = !showAdvanced"
-        >
-          {{ showAdvanced ? '收起' : '高级' }}
-        </button>
+        <p v-if="!canGoNext(0)" class="step-hint">请选择分析算法</p>
       </div>
     </div>
 
     <!-- 步骤1: 选择雷达站 -->
-    <div class="config-section">
-      <h4 class="section-title">1. 选择雷达站</h4>
-      <p class="section-hint">选择进行误差分析的雷达站（至少选择2个）</p>
+    <div v-if="currentStep === 1" class="step-content">
+      <div class="step-header">
+        <h4 class="section-title">选择雷达站</h4>
+        <p class="section-hint">选择进行误差分析的雷达站（至少选择 2 个）</p>
+      </div>
       <div class="radar-station-list">
         <div
           v-for="station in availableRadarStations"
@@ -47,17 +80,33 @@
       <div v-if="availableRadarStations.length === 0" class="empty-hint">
         暂无可用雷达站，请先上传雷达站数据
       </div>
+      <div class="step-footer">
+        <button class="btn btn-secondary" @click="prevStep">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          上一步
+        </button>
+        <button class="btn btn-primary" :disabled="!canGoNext(1)" @click="nextStep">
+          下一步
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+        <p v-if="!canGoNext(1)" class="step-hint">请选择至少 2 个雷达站</p>
+      </div>
     </div>
 
-    <!-- 步骤2: 选择轨迹 -->
-    <div v-if="selectedStationIds.length >= 2" class="config-section">
-      <h4 class="section-title">2. 选择航迹</h4>
-      <p class="section-hint">
-        已选择 {{ selectedStationIds.length }} 个雷达站，
-        {{ selectedTrackIds.length }} 条轨迹
-      </p>
+    <!-- 步骤2: 选择航迹 -->
+    <div v-if="currentStep === 2" class="step-content">
+      <div class="step-header">
+        <h4 class="section-title">选择航迹</h4>
+        <p class="section-hint">
+          已选择 {{ selectedStationIds.length }} 个雷达站，
+          {{ selectedTrackIds.length }} 条轨迹
+        </p>
+      </div>
 
-      <!-- 加载按钮 -->
       <div class="quick-actions">
         <button
           class="btn btn-primary btn-sm"
@@ -68,7 +117,6 @@
         </button>
       </div>
 
-      <!-- 轨迹列表 -->
       <div v-if="trackList.length > 0" class="track-list">
         <div
           v-for="track in trackList"
@@ -117,7 +165,6 @@
         选中的雷达站没有共同的观测轨迹
       </div>
 
-      <!-- 已选轨迹汇总 -->
       <div v-if="selectedTrackIds.length > 0" class="selected-summary">
         <div class="summary-title">已选轨迹涉及的雷达站：</div>
         <div class="summary-stations">
@@ -133,13 +180,32 @@
           至少需要2个雷达站才能进行分析
         </div>
       </div>
+
+      <div class="step-footer">
+        <button class="btn btn-secondary" @click="prevStep">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          上一步
+        </button>
+        <button class="btn btn-primary" :disabled="!canGoNext(2)" @click="nextStep">
+          下一步
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+        <p v-if="!canGoNext(2)" class="step-hint">{{ step2Hint }}</p>
+      </div>
     </div>
 
-    <!-- 步骤3: 配置参数 -->
-    <div v-if="selectedTrackIds.length > 0 && involvedStationIds.length >= 2" class="config-section">
-      <h4 class="section-title">3. 分析配置</h4>
+    <!-- 步骤3: 确认并开始 -->
+    <div v-if="currentStep === 3" class="step-content">
+      <div class="step-header">
+        <h4 class="section-title">确认并开始分析</h4>
+        <p class="section-hint">确认配置参数后开始误差分析</p>
+      </div>
 
-      <!-- 预设配置 -->
+      <!-- 参数预设 -->
       <div class="subsection">
         <h5 class="subsection-title">参数预设方案</h5>
         <div class="preset-grid">
@@ -231,7 +297,7 @@
           <div class="form-group">
             <label class="form-label">方位角误差权重</label>
             <input
-              v-model.number="localConfig.cost_weights.azimuth"
+              v-model.number="localConfig.cost_weights.azimuth_error_square"
               type="number"
               step="0.01"
               min="0"
@@ -244,7 +310,7 @@
           <div class="form-group">
             <label class="form-label">距离误差权重</label>
             <input
-              v-model.number="localConfig.cost_weights.range"
+              v-model.number="localConfig.cost_weights.range_error_square"
               type="number"
               step="1e-7"
               min="0"
@@ -255,7 +321,7 @@
           <div class="form-group">
             <label class="form-label">俯仰角误差权重</label>
             <input
-              v-model.number="localConfig.cost_weights.elevation"
+              v-model.number="localConfig.cost_weights.elevation_error_square"
               type="number"
               step="0.01"
               min="0"
@@ -286,7 +352,6 @@
             :disabled="store.isTaskRunning"
           />
         </div>
-
         <div class="form-group">
           <label class="form-label">最大匹配组数</label>
           <input
@@ -300,25 +365,57 @@
           />
         </div>
       </div>
-    </div>
 
-    <!-- 操作按钮 -->
-    <div class="config-actions-footer">
-      <button
-        class="btn btn-primary"
-        :disabled="!canStartAnalysis || store.isTaskRunning"
-        @click="handleStartAnalysis"
-      >
-        <svg v-if="store.taskLoading" class="spinner" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3" opacity="0.25"/>
-          <path fill="none" stroke="currentColor" stroke-width="3" d="M12 2a10 10 0 0 1 10 10">
-            <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
-          </path>
-        </svg>
-        {{ store.taskLoading ? '创建中...' : '开始分析' }}
-      </button>
-      <div v-if="!canStartAnalysis" class="start-hint">
-        {{ startHintText }}
+      <!-- 配置摘要 -->
+      <div class="config-summary">
+        <div class="summary-row">
+          <span class="summary-label">算法</span>
+          <span class="summary-value">{{ store.currentAlgorithmName || store.selectedAlgorithm || '--' }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">雷达站</span>
+          <span class="summary-value">{{ store.selectedRadarStations.map(s => s.station_id).join(', ') }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">轨迹数</span>
+          <span class="summary-value">{{ selectedTrackIds.length }} 条</span>
+        </div>
+      </div>
+
+      <div class="step-footer">
+        <button class="btn btn-secondary" @click="prevStep">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          上一步
+        </button>
+        <button
+          class="btn btn-primary btn-start"
+          :disabled="!canStartAnalysis || store.isTaskRunning"
+          @click="handleStartAnalysis"
+        >
+          <svg v-if="store.taskLoading" class="spinner" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3" opacity="0.25"/>
+            <path fill="none" stroke="currentColor" stroke-width="3" d="M12 2a10 10 0 0 1 10 10">
+              <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+            </path>
+          </svg>
+          {{ store.taskLoading ? '创建中...' : '开始分析' }}
+        </button>
+      </div>
+
+      <!-- 高级开关 -->
+      <div class="advanced-toggle">
+        <button class="btn btn-secondary btn-sm" @click="showAdvanced = !showAdvanced">
+          {{ showAdvanced ? '收起高级' : '高级参数' }}
+        </button>
+        <button
+          v-if="showAdvanced"
+          class="btn btn-secondary btn-sm"
+          @click="resetToDefaults"
+        >
+          重置
+        </button>
       </div>
     </div>
   </div>
@@ -328,7 +425,12 @@
 import { ref, computed, watch, watchEffect, onMounted } from 'vue'
 import { useErrorAnalysisStore } from '@/stores/errorAnalysis'
 import { useAppStore } from '@/stores/app'
+import {
+  AlgorithmSelector,
+  AlgorithmConfigContainer,
+} from '@/components/errorAnalysis'
 import type { RadarStationInfo, TrackInfo, PresetProfile } from '@/types/errorAnalysis'
+import type { PresetConfig } from '@/types/errorAnalysis/algorithms'
 
 interface TrackWithStations extends TrackInfo {
   station_ids: number[]
@@ -337,27 +439,66 @@ interface TrackWithStations extends TrackInfo {
 const store = useErrorAnalysisStore()
 const appStore = useAppStore()
 
+// ---- 步骤管理 ----
+const currentStep = ref(0)
+
+const steps = [
+  { key: 'algorithm', label: '选择算法' },
+  { key: 'stations', label: '选择雷达站' },
+  { key: 'tracks', label: '选择航迹' },
+  { key: 'confirm', label: '确认分析' },
+]
+
+function canGoNext(step: number): boolean {
+  switch (step) {
+    case 0: return !!store.selectedAlgorithm
+    case 1: return selectedStationIds.value.length >= 2
+    case 2: return selectedTrackIds.value.length > 0 && involvedStationIds.value.length >= 2
+    default: return false
+  }
+}
+
+const step2Hint = computed(() => {
+  if (selectedTrackIds.value.length === 0) return '请选择至少 1 条航迹'
+  if (involvedStationIds.value.length < 2) return '选中的轨迹至少需要 2 个雷达站观测'
+  return ''
+})
+
+function nextStep() {
+  if (canGoNext(currentStep.value) && currentStep.value < steps.length - 1) {
+    currentStep.value++
+  }
+}
+
+function prevStep() {
+  if (currentStep.value > 0) {
+    currentStep.value--
+  }
+}
+
+function goToStep(index: number) {
+  // 只能跳到当前步或之前已完成的步骤
+  if (index <= currentStep.value) {
+    currentStep.value = index
+  }
+}
+
+// ---- 原有逻辑 ----
 const showAdvanced = ref(false)
 const activePreset = ref<PresetProfile>('standard')
 
-// 雷达站和轨迹数据
 const availableRadarStations = ref<RadarStationInfo[]>([])
 const trackList = ref<TrackWithStations[]>([])
 const loadingTracks = ref(false)
 const hasLoadedTracks = ref(false)
-
-// 选中的轨迹
 const selectedTrackIds = ref<string[]>([])
 
-// 本地配置副本 - 使用 ref + watchEffect 确保响应式追踪 config 的任何变化
 const localConfig = ref(store.config)
 
-// 显式追踪 store.config 的变化并同步到 localConfig
 watchEffect(() => {
   localConfig.value = store.config
 })
 
-// 字符串形式的优化步长
 const optimizationStepsStr = computed({
   get: () => store.config.optimization_steps.join(', '),
   set: (value: string) => {
@@ -378,18 +519,15 @@ const rangeOptimizationStepsStr = computed({
   }
 })
 
-// 预设配置信息
 const presetInfo: Record<PresetProfile, { label: string; description: string }> = {
-  standard: { label: '标准配置', description: '与原项目默认参数一致，平衡精度与速度' },
+  standard: { label: '标准配置', description: '平衡精度与速度' },
   high_precision: { label: '高精度', description: '更精细的分析，适用于需要精确误差的场景' },
   fast: { label: '快速分析', description: '大数据量初步筛选，速度优先' },
   coarse: { label: '粗粒度', description: '低分辨率或大范围分析' },
 }
 
-// 选择状态
 const selectedStationIds = computed(() => store.selectedRadarStations.map(s => s.id))
 
-// 涉及某条轨迹的雷达站
 const involvedStationIds = computed(() => {
   const stationIds = new Set<number>()
   for (const trackId of selectedTrackIds.value) {
@@ -408,13 +546,6 @@ const canStartAnalysis = computed(() => {
   )
 })
 
-const startHintText = computed(() => {
-  if (selectedTrackIds.value.length === 0) return '请选择航迹'
-  if (involvedStationIds.value.length < 2) return '选中的轨迹至少需要2个雷达站观测'
-  return ''
-})
-
-// 加载雷达站列表
 async function loadRadarStations() {
   try {
     availableRadarStations.value = await store.loadRadarStations()
@@ -423,7 +554,6 @@ async function loadRadarStations() {
   }
 }
 
-// 加载选中雷达站的轨迹
 async function loadTracksForSelectedStations() {
   if (selectedStationIds.value.length < 2) {
     appStore.warning('请先选择至少2个雷达站')
@@ -436,7 +566,6 @@ async function loadTracksForSelectedStations() {
   trackList.value = []
 
   try {
-    // 获取每个选中雷达站的轨迹
     const stationTracks: Map<string, Set<string>> = new Map()
 
     for (const stationId of selectedStationIds.value) {
@@ -444,13 +573,11 @@ async function loadTracksForSelectedStations() {
       stationTracks.set(stationId.toString(), new Set(tracks.map(t => t.batch_id)))
     }
 
-    // 找出所有轨迹
     const allBatchIds = new Set<string>()
     stationTracks.forEach((batches) => {
       batches.forEach(batchId => allBatchIds.add(batchId))
     })
 
-    // 构建轨迹列表，包含每个轨迹被哪些雷达站观测
     const trackMap: Map<string, TrackWithStations> = new Map()
 
     for (const batchId of allBatchIds) {
@@ -461,7 +588,6 @@ async function loadTracksForSelectedStations() {
         }
       }
 
-      // 获取轨迹详情（从任意一个有数据的雷达站）
       let trackInfo: TrackInfo | null = null
       for (const stationId of observingStations) {
         try {
@@ -481,7 +607,6 @@ async function loadTracksForSelectedStations() {
       }
     }
 
-    // 转换为数组并按时间排序
     trackList.value = Array.from(trackMap.values()).sort((a, b) => {
       return new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
     })
@@ -493,7 +618,6 @@ async function loadTracksForSelectedStations() {
   }
 }
 
-// 选择操作
 function isStationSelected(stationId: number): boolean {
   return selectedStationIds.value.includes(stationId)
 }
@@ -505,7 +629,6 @@ function toggleStation(station: RadarStationInfo) {
   } else {
     store.selectRadarStations([...current, station])
   }
-  // 清空轨迹选择和列表
   selectedTrackIds.value = []
   trackList.value = []
   hasLoadedTracks.value = false
@@ -516,9 +639,7 @@ function isTrackSelected(batchId: string): boolean {
 }
 
 function toggleTrack(track: TrackWithStations) {
-  // 只有至少2个雷达站观测到的轨迹才能选
   if (track.station_ids.length < 2) return
-
   if (isTrackSelected(track.batch_id)) {
     selectedTrackIds.value = selectedTrackIds.value.filter(id => id !== track.batch_id)
   } else {
@@ -531,17 +652,39 @@ function getStationName(stationId: number): string {
   return station?.station_id || `站${stationId}`
 }
 
-// 应用预设
 function applyPreset(preset: PresetProfile) {
-  console.log('[Debug] applyPreset called with:', preset)
-  console.log('[Debug] Before applyPreset, store.config:', JSON.stringify(store.config))
   activePreset.value = preset
   store.applyPreset(preset)
-  console.log('[Debug] After applyPreset, store.config:', JSON.stringify(store.config))
   appStore.success(`已应用${presetInfo[preset].label}配置`)
 }
 
-// 重置为默认值
+async function handleAlgorithmChange(algorithmName: string) {
+  await store.selectAlgorithm(algorithmName)
+}
+
+function handleAlgorithmConfigChange(config: Record<string, any>) {
+  store.updateAlgorithmConfig(config)
+}
+
+function handleAlgorithmConfigUpdate(config: Record<string, any>) {
+  store.updateAlgorithmConfig(config)
+  store.updateConfig(config)
+}
+
+function handlePresetApplied(preset: PresetConfig) {
+  store.updateAlgorithmConfig(preset.config)
+  store.updateConfig(preset.config)
+
+  const presetNameMap: Record<string, PresetProfile> = {
+    standard: 'standard',
+    high_precision: 'high_precision',
+    fast: 'fast',
+    coarse: 'coarse',
+  }
+  activePreset.value = presetNameMap[preset.name] || 'standard'
+  appStore.success(`已应用${preset.display_name}配置`)
+}
+
 function resetToDefaults() {
   store.resetConfig()
   activePreset.value = 'standard'
@@ -551,7 +694,6 @@ function resetToDefaults() {
   appStore.info('配置已重置')
 }
 
-// 格式化时间
 function formatTime(dateString: string): string {
   if (!dateString) return '--'
   const date = new Date(dateString)
@@ -563,12 +705,10 @@ function formatTime(dateString: string): string {
   })
 }
 
-// 开始分析
 async function handleStartAnalysis() {
   if (!canStartAnalysis.value) return
 
   try {
-    // 只传入有数据的雷达站
     const involvedStations = availableRadarStations.value.filter(s =>
       involvedStationIds.value.includes(s.id)
     )
@@ -584,19 +724,12 @@ async function handleStartAnalysis() {
   }
 }
 
-// 初始化
 onMounted(() => {
   loadRadarStations()
 })
 
-// 调试：监控 store.config 的变化
 watch(() => store.config, (newConfig) => {
-  console.log('[Debug] store.config changed:', newConfig)
-}, { deep: true })
-
-// 调试：监控 localConfig 的变化
-watch(localConfig, (newLocalConfig) => {
-  console.log('[Debug] localConfig changed:', newLocalConfig)
+  // config synced via watchEffect
 }, { deep: true })
 </script>
 
@@ -604,36 +737,121 @@ watch(localConfig, (newLocalConfig) => {
 .error-config-panel {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem;
+  gap: 1.25rem;
+  padding: 1.25rem;
   background: var(--bg-secondary);
   border-radius: 0.75rem;
 }
 
-.config-header {
+/* ===== 步骤指示器 ===== */
+.stepper {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 1rem;
+  justify-content: space-between;
+  padding: 0 0.25rem;
 }
 
-.config-title {
-  margin: 0;
-  font-size: 1.125rem;
+.stepper-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 1;
+  position: relative;
+  cursor: default;
+}
+
+/* 步骤之间的连线 */
+.stepper-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: calc(50% + 14px);
+  width: calc(100% - 28px);
+  height: 2px;
+  background: var(--border-color);
+  transition: background 0.3s;
+}
+
+.stepper-item.completed:not(:last-child)::after {
+  background: var(--color-primary);
+}
+
+.stepper-item.clickable {
+  cursor: pointer;
+}
+
+.stepper-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-weight: 600;
+  border: 2px solid var(--border-color);
+  transition: all 0.3s;
+  position: relative;
+  z-index: 1;
+}
+
+.stepper-item.active .stepper-dot {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+}
+
+.stepper-item.completed .stepper-dot {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.stepper-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  transition: color 0.3s;
+}
+
+.stepper-item.active .stepper-label {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.stepper-item.completed .stepper-label {
   color: var(--text-primary);
 }
 
-.config-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-/* 配置区块 */
-.config-section {
+/* ===== 步骤内容 ===== */
+.step-content {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  animation: stepFadeIn 0.25s ease-out;
+}
+
+@keyframes stepFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.step-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .section-title {
@@ -649,12 +867,33 @@ watch(localConfig, (newLocalConfig) => {
   color: var(--text-secondary);
 }
 
-/* 雷达站列表 */
+.step-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.step-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* ===== 算法配置 ===== */
+.algorithm-config-wrapper {
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 0.5rem;
+}
+
+/* ===== 雷达站列表 ===== */
 .radar-station-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: 200px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
@@ -688,6 +927,7 @@ watch(localConfig, (newLocalConfig) => {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 
 .radar-station-item.selected .station-checkbox {
@@ -711,7 +951,7 @@ watch(localConfig, (newLocalConfig) => {
   color: var(--text-muted);
 }
 
-/* 轨迹列表 */
+/* ===== 轨迹列表 ===== */
 .track-list {
   display: flex;
   flex-direction: column;
@@ -756,6 +996,7 @@ watch(localConfig, (newLocalConfig) => {
   justify-content: center;
   transition: all 0.2s;
   margin-top: 0.25rem;
+  flex-shrink: 0;
 }
 
 .track-item.selected .track-checkbox {
@@ -831,7 +1072,7 @@ watch(localConfig, (newLocalConfig) => {
   color: var(--text-muted);
 }
 
-/* 已选轨迹汇总 */
+/* ===== 已选汇总 ===== */
 .selected-summary {
   padding: 1rem;
   background: var(--bg-tertiary);
@@ -851,14 +1092,40 @@ watch(localConfig, (newLocalConfig) => {
   flex-wrap: wrap;
 }
 
-/* 快速操作 */
+/* ===== 配置摘要（确认步骤） ===== */
+.config-summary {
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.summary-label {
+  color: var(--text-secondary);
+}
+
+.summary-value {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ===== 快速操作 ===== */
 .quick-actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-/* 预设配置 */
+/* ===== 预设配置 ===== */
 .preset-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -896,7 +1163,7 @@ watch(localConfig, (newLocalConfig) => {
   line-height: 1.4;
 }
 
-/* 高级配置 */
+/* ===== 子区域 ===== */
 .subsection {
   display: flex;
   flex-direction: column;
@@ -960,18 +1227,16 @@ watch(localConfig, (newLocalConfig) => {
   cursor: not-allowed;
 }
 
-/* 提示信息 */
+/* ===== 提示信息 ===== */
 .empty-hint,
-.warning-hint,
-.loading-hint {
+.warning-hint {
   padding: 0.75rem;
   border-radius: 0.375rem;
   font-size: 0.8125rem;
   text-align: center;
 }
 
-.empty-hint,
-.loading-hint {
+.empty-hint {
   background: var(--bg-tertiary);
   color: var(--text-muted);
 }
@@ -981,7 +1246,7 @@ watch(localConfig, (newLocalConfig) => {
   color: #f59e0b;
 }
 
-/* 按钮 */
+/* ===== 按钮 ===== */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -1024,32 +1289,19 @@ watch(localConfig, (newLocalConfig) => {
   background: var(--border-color);
 }
 
-.btn-outline {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
+.btn-start {
+  flex: 1;
+  padding: 0.625rem 1.25rem;
 }
 
-.btn-outline:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-/* 底部操作区 */
-.config-actions-footer {
+/* ===== 高级开关 ===== */
+.advanced-toggle {
   display: flex;
-  flex-direction: column;
   gap: 0.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-color);
+  justify-content: flex-end;
 }
 
-.start-hint {
-  font-size: 0.8125rem;
-  color: var(--text-muted);
-  text-align: center;
-}
-
+/* ===== Spinner ===== */
 .spinner {
   width: 1rem;
   height: 1rem;
@@ -1068,6 +1320,10 @@ watch(localConfig, (newLocalConfig) => {
 
   .preset-grid {
     grid-template-columns: 1fr;
+  }
+
+  .stepper-label {
+    font-size: 0.625rem;
   }
 }
 </style>

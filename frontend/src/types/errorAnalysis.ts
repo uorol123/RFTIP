@@ -1,5 +1,6 @@
 /**
- * MRRA 误差分析类型定义
+ * 误差分析类型定义
+ * 算法：基于梯度下降的迭代寻优算法
  *
  * 与后端 API 模型对应 - 新版工作流
  */
@@ -19,7 +20,7 @@ export interface CostWeights {
 // ========== 配置类型 ==========
 
 /**
- * 误差分析配置 (MRRA算法参数)
+ * 误差分析配置 (基于梯度下降的迭代寻优算法参数)
  */
 export interface ErrorAnalysisConfig {
   // 网格与时间参数
@@ -40,7 +41,7 @@ export interface ErrorAnalysisConfig {
 }
 
 /**
- * 默认 MRRA 配置 (与原项目参数一致)
+ * 默认配置 (与原项目参数一致)
  */
 export const DEFAULT_ERROR_ANALYSIS_CONFIG: ErrorAnalysisConfig = {
   grid_resolution: 0.2,
@@ -59,7 +60,7 @@ export const DEFAULT_ERROR_ANALYSIS_CONFIG: ErrorAnalysisConfig = {
 }
 
 /**
- * MRRA 预设配置方案
+ * 预设配置方案
  */
 export type PresetProfile = 'standard' | 'high_precision' | 'fast' | 'coarse'
 

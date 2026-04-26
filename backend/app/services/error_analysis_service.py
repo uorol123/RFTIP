@@ -78,6 +78,7 @@ class ErrorAnalysisService:
             radar_station_ids=request.radar_station_ids,
             track_ids=request.track_ids,
             user_id=user_id,
+            algorithm_name=request.algorithm,
             config=config_dict,
             status=ErrorAnalysisTaskStatus.PENDING,
             progress=0
@@ -87,7 +88,12 @@ class ErrorAnalysisService:
         self.db.commit()
         self.db.refresh(task)
 
-        logger.info(f"创建误差分析任务: {task_id}, 雷达站: {request.radar_station_ids}, 轨迹: {request.track_ids}")
+        logger.info(
+            f"创建误差分析任务: {task_id}, "
+            f"算法: {request.algorithm}, "
+            f"雷达站: {request.radar_station_ids}, "
+            f"轨迹: {request.track_ids}"
+        )
 
         return self._task_to_response(task)
 
@@ -109,75 +115,32 @@ class ErrorAnalysisService:
         if task.status != ErrorAnalysisTaskStatus.PENDING:
             raise ValueError(f"任务状态不正确: {task.status}")
 
+        # 获取算法名称
+        algorithm_name = task.algorithm_name or "gradient_descent"
+
         try:
             # 更新任务状态
             task.status = ErrorAnalysisTaskStatus.EXTRACTING
             task.started_at = datetime.utcnow()
             self.db.commit()
 
-            # 加载配置
-            config = MrraConfig(**task.config) if task.config else MrraConfig()
+            # 使用 AlgorithmFactory 创建算法实例
+            from app.utils.error_analysis.factory import AlgorithmFactory
 
-            # 获取选中的雷达站位置
-            radar_stations = self.db.query(RadarStation).filter(
-                RadarStation.id.in_(task.radar_station_ids)
-            ).all()
-            radar_positions = {
-                station.id: (station.longitude, station.latitude, station.altitude or 0.0)
-                for station in radar_stations
-            }
+            # 如果任务有配置，使用配置；否则使用默认配置
+            algorithm_config = None
+            if task.config:
+                algorithm_config = task.config
 
-            if not radar_positions:
-                raise ValueError("没有找到指定的雷达站位置信息")
+            algorithm = AlgorithmFactory.create_algorithm_from_dict(
+                algorithm_name,
+                algorithm_config or {}
+            )
 
-            logger.info(f"使用 {len(radar_positions)} 个雷达站: {task.radar_station_ids}")
+            logger.info(f"使用算法 {algorithm_name} 执行任务 {task_id}")
 
-            # 步骤1: 加载航迹数据（按轨迹编号筛选）
-            self.update_progress(task_id, 10, "加载航迹数据")
-            station_data = load_track_points_by_track_ids(self.db, task.track_ids, radar_positions)
-
-            if not station_data:
-                raise ValueError("没有找到有效的航迹数据")
-
-            # 步骤2: 提取关键航迹
-            task.status = ErrorAnalysisTaskStatus.EXTRACTING
-            self.update_progress(task_id, 20, "提取关键航迹")
-            key_tracks = extract_key_tracks(station_data, config)
-
-            if not key_tracks:
-                raise ValueError("没有提取到关键航迹")
-
-            # 步骤3: 插值
-            task.status = ErrorAnalysisTaskStatus.INTERPOLATING
-            self.update_progress(task_id, 40, "航迹插值")
-
-            # 获取参考时间（使用第一条轨迹的时间）
-            from app.models.flight_track import FlightTrackRaw
-            first_track = self.db.query(FlightTrackRaw).filter(
-                FlightTrackRaw.batch_id.in_(task.track_ids)
-            ).order_by(FlightTrackRaw.timestamp).first()
-            reference_time = first_track.timestamp.replace(hour=0, minute=0, second=0, microsecond=0) if first_track else datetime.utcnow()
-
-            interpolate_and_save_tracks(self.db, task_id, key_tracks, config, reference_time)
-
-            # 步骤4: 匹配
-            task.status = ErrorAnalysisTaskStatus.MATCHING
-            self.update_progress(task_id, 60, "航迹匹配")
-            matched_groups = match_tracks_from_database(self.db, task_id, config)
-
-            if not matched_groups:
-                raise ValueError("没有匹配到航迹组")
-
-            # 保存匹配结果
-            save_matched_groups(self.db, task_id, matched_groups, reference_time)
-
-            # 步骤5: 计算误差
-            task.status = ErrorAnalysisTaskStatus.CALCULATING
-            self.update_progress(task_id, 80, "计算雷达误差")
-            error_results = calculate_error_results(matched_groups, radar_positions, config)
-
-            # 保存误差结果
-            self._save_error_results(task_id, error_results)
+            # 执行分析（兼容旧的 MRRA 流程）
+            self._execute_with_legacy_flow(task, algorithm)
 
             # 完成
             task.status = ErrorAnalysisTaskStatus.COMPLETED
@@ -194,6 +157,78 @@ class ErrorAnalysisService:
             task.completed_at = datetime.utcnow()
             self.db.commit()
             raise
+
+    def _execute_with_legacy_flow(self, task: ErrorAnalysisTask, algorithm) -> None:
+        """
+        使用旧的 MRRA 流程执行分析（向后兼容）
+
+        Args:
+            task: 任务对象
+            algorithm: 算法实例
+        """
+        # 加载配置
+        config = MrraConfig(**task.config) if task.config else MrraConfig()
+
+        # 获取选中的雷达站位置
+        radar_stations = self.db.query(RadarStation).filter(
+            RadarStation.id.in_(task.radar_station_ids)
+        ).all()
+        radar_positions = {
+            station.id: (station.longitude, station.latitude, station.altitude or 0.0)
+            for station in radar_stations
+        }
+
+        if not radar_positions:
+            raise ValueError("没有找到指定的雷达站位置信息")
+
+        logger.info(f"使用 {len(radar_positions)} 个雷达站: {task.radar_station_ids}")
+
+        # 步骤1: 加载航迹数据（按轨迹编号筛选）
+        self.update_progress(task.task_id, 10, "加载航迹数据")
+        station_data = load_track_points_by_track_ids(self.db, task.track_ids, radar_positions)
+
+        if not station_data:
+            raise ValueError("没有找到有效的航迹数据")
+
+        # 步骤2: 提取关键航迹
+        task.status = ErrorAnalysisTaskStatus.EXTRACTING
+        self.update_progress(task.task_id, 20, "提取关键航迹")
+        key_tracks = extract_key_tracks(station_data, config)
+
+        if not key_tracks:
+            raise ValueError("没有提取到关键航迹")
+
+        # 步骤3: 插值
+        task.status = ErrorAnalysisTaskStatus.INTERPOLATING
+        self.update_progress(task.task_id, 40, "航迹插值")
+
+        # 获取参考时间（使用第一条轨迹的时间）
+        from app.models.flight_track import FlightTrackRaw
+        first_track = self.db.query(FlightTrackRaw).filter(
+            FlightTrackRaw.batch_id.in_(task.track_ids)
+        ).order_by(FlightTrackRaw.timestamp).first()
+        reference_time = first_track.timestamp.replace(hour=0, minute=0, second=0, microsecond=0) if first_track else datetime.utcnow()
+
+        interpolate_and_save_tracks(self.db, task.task_id, key_tracks, config, reference_time)
+
+        # 步骤4: 匹配
+        task.status = ErrorAnalysisTaskStatus.MATCHING
+        self.update_progress(task.task_id, 60, "航迹匹配")
+        matched_groups = match_tracks_from_database(self.db, task.task_id, config)
+
+        if not matched_groups:
+            raise ValueError("没有匹配到航迹组")
+
+        # 保存匹配结果
+        save_matched_groups(self.db, task.task_id, matched_groups, reference_time)
+
+        # 步骤5: 计算误差
+        task.status = ErrorAnalysisTaskStatus.CALCULATING
+        self.update_progress(task.task_id, 80, "计算雷达误差")
+        error_results = calculate_error_results(matched_groups, radar_positions, config)
+
+        # 保存误差结果
+        self._save_error_results(task.task_id, error_results)
 
     def update_progress(
         self,
@@ -556,6 +591,7 @@ class ErrorAnalysisService:
             radar_station_ids=task.radar_station_ids or [],
             track_ids=task.track_ids or [],
             user_id=task.user_id,
+            algorithm_name=task.algorithm_name,
             status=task.status,
             progress=task.progress,
             error_message=task.error_message,

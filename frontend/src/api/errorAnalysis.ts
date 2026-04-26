@@ -1,5 +1,6 @@
 /**
- * MRRA 误差分析 API
+ * 误差分析 API
+ * 算法：基于梯度下降的迭代寻优算法
  * Base Path: /api/error-analysis
  */
 

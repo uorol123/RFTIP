@@ -3,6 +3,8 @@ RFTIP 后端应用主入口
 
 RadarFusionTrack Intelligence Platform - Backend
 """
+import logging
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,6 +101,18 @@ logger.info("All routers registered successfully")
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Configure logging for uvicorn to ensure logs appear in terminal
+    for log_name in ["uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.asgi"]:
+        log = logging.getLogger(log_name)
+        log.handlers.clear()
+        log.setLevel(logging.INFO)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        ))
+        log.addHandler(handler)
 
     logger.info("Starting uvicorn server...")
     uvicorn.run(

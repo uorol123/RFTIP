@@ -1,6 +1,6 @@
 """
 误差分析数据模型
-用于MRRA雷达误差分析功能
+算法：基于梯度下降的迭代寻优算法
 """
 from datetime import datetime
 from typing import Optional
@@ -32,6 +32,9 @@ class ErrorAnalysisTask(Base):
     radar_station_ids = Column(JSON, nullable=False, comment="雷达站ID列表")
     track_ids = Column(JSON, nullable=False, comment="轨迹ID列表")
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建用户ID")
+
+    # 算法名称 (支持多算法扩展)
+    algorithm_name = Column(String(50), nullable=True, default="gradient_descent", comment="算法名称")
 
     # 配置参数 (JSON格式存储)
     config = Column(JSON, nullable=True, comment="分析配置参数")
