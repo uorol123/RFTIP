@@ -711,7 +711,7 @@ def process_tracks(request: TrackProcessRequest, db: Session) -> TrackProcessRes
     for i, obs in enumerate(result['corrected_observations']):
         corrected = FlightTrackCorrected(
             raw_track_id=obs['raw_track_id'],
-            track_id=obs['track_id'],
+            batch_id=obs['track_id'],
             timestamp=obs['timestamp'],
             latitude=obs['latitude'],
             longitude=obs['longitude'],

@@ -8,24 +8,22 @@ from pydantic import BaseModel, Field, computed_field
 
 class RadarStationBase(BaseModel):
     """雷达站基础模型"""
-    station_code: str = Field(..., max_length=20, description="雷达站编号")
-    station_name: str = Field(..., max_length=100, description="雷达站名称")
+    station_id: str = Field(..., max_length=50, description="站号（原始值）")
     latitude: float = Field(..., ge=-90, le=90, description="纬度")
     longitude: float = Field(..., ge=-180, le=180, description="经度")
-    altitude: float = Field(0, ge=0, description="海拔高度（米）")
-    max_range: Optional[float] = Field(None, ge=0, description="最大探测距离（千米）")
-    frequency: Optional[str] = Field(None, max_length=50, description="工作频率")
+    altitude: Optional[float] = Field(None, description="海拔高度（米）")
+    description: Optional[str] = Field(None, max_length=255, description="备注说明")
 
 
 class RadarStationCreate(RadarStationBase):
     """雷达站创建模型"""
-    pass
+    file_id: int = Field(..., description="来源文件ID")
 
 
 class RadarStationResponse(RadarStationBase):
     """雷达站响应模型"""
     id: int
-    status: str
+    file_id: int
     created_at: datetime
 
     class Config:

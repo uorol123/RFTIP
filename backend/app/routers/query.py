@@ -17,21 +17,14 @@ router = APIRouter(prefix="/query", tags=["query"])
 async def list_radar_stations(
     current_user: Annotated[UserResponse, Depends(get_current_active_user)],
     db: Annotated[Session, Depends(get_db)],
-    status_filter: Annotated[Optional[str], Query()] = None,
 ):
     """
     查询雷达站列表
-
-    - **status_filter**: 状态过滤 (active/inactive/maintenance)
     """
     from app.models.flight_track import RadarStation
 
     query = db.query(RadarStation)
-
-    if status_filter:
-        query = query.filter(RadarStation.status == status_filter)
-
-    stations = query.order_by(RadarStation.station_code).all()
+    stations = query.order_by(RadarStation.station_id).all()
     return [RadarStationResponse.model_validate(s) for s in stations]
 
 
@@ -68,7 +61,6 @@ async def get_statistics(
     # 雷达站统计
     stats["radar_stations"] = {
         "total": db.query(func.count(RadarStation.id)).scalar(),
-        "active": db.query(func.count(RadarStation.id)).filter(RadarStation.status == "active").scalar(),
     }
 
     # 禁飞区统计
