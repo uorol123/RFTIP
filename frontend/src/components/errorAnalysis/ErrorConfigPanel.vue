@@ -702,7 +702,8 @@ function isTrackSelected(batchId: string): boolean {
 }
 
 function toggleTrack(track: TrackWithStations) {
-  if (track.station_ids.length < 2) return
+  // 单源模式：允许选择任何轨迹
+  if (!store.isSingleSourceMode && track.station_ids.length < 2) return
   if (isTrackSelected(track.batch_id)) {
     selectedTrackIds.value = selectedTrackIds.value.filter(id => id !== track.batch_id)
   } else {
