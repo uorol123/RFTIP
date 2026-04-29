@@ -33,142 +33,18 @@
 
 ## 3. 数据库设计
 
-### 3.1 用户相关表
+| 表名 | 说明 | 关键字段 |
+|------|------|----------|
+| **users** | 用户信息 | username, email, role, avatar_url |
+| **user_login_logs** | 登录日志 | user_id, login_time, ip_address, status |
+| **data_files** | 上传文件（MinIO 存储） | user_id, file_name, data_type(track/radar), is_public |
+| **flight_tracks_raw** | 原始飞行轨迹 | file_id, batch_id, station_id, time_stamp, lon/lat, altitude |
+| **flight_tracks_corrected** | 修正后轨迹 | batch_id, time_stamp, lon/lat, altitude, speed |
+| **radar_stations** | 雷达站信息 | file_id, station_id, lon/lat, altitude |
+| **restricted_zones** | 用户自定义禁飞区 | user_id, zone_type(circle/polygon), 坐标参数, 高度限制 |
+| **zone_intrusions** | 禁飞区入侵记录 | zone_id, batch_id, intrusion_time, 坐标, alert_sent |
 
-```sql
--- 用户信息表
-CREATE TABLE users (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE COMMENT '用户名',
-    email VARCHAR(100) NOT NULL UNIQUE COMMENT '邮箱（用于接收预警通知）',
-    password_hash VARCHAR(255) NOT NULL COMMENT '加密后的密码',
-    avatar_url VARCHAR(500) COMMENT '头像URL',
-    role ENUM('user', 'admin') DEFAULT 'user' COMMENT '用户角色',
-    is_active BOOLEAN DEFAULT TRUE COMMENT '账号状态',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) COMMENT '用户信息表';
-
--- 用户登录日志表
-CREATE TABLE user_login_logs (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT NOT NULL COMMENT '用户ID',
-    login_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '登录时间',
-    ip_address VARCHAR(45) COMMENT 'IP地址',
-    device_info VARCHAR(255) COMMENT '设备信息',
-    status ENUM('success', 'failed') DEFAULT 'success' COMMENT '登录状态',
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) COMMENT '用户登录日志表';
-```
-
-### 3.2 数据文件表
-
-```sql
--- 数据文件表（数据只存一份，通过 file_id 关联）
-CREATE TABLE data_files (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT NOT NULL COMMENT '上传用户ID',
-    file_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
-    file_path VARCHAR(500) NOT NULL COMMENT '存储路径(MinIO)',
-    data_type ENUM('track', 'radar') NOT NULL COMMENT '数据类型：track=飞行轨迹，radar=雷达站',
-    is_public BOOLEAN DEFAULT FALSE COMMENT '是否公开（其他用户可查看引用）',
-    upload_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '上传时间',
-    description VARCHAR(500) COMMENT '文件描述',
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE INDEX idx_user_file (user_id, file_name)  -- 同一用户文件不重复
-) COMMENT '数据文件表';
-```
-
-### 3.3 轨迹数据表（通过 file_id 关联）
-
-```sql
--- 原始飞行轨迹表
-CREATE TABLE flight_tracks_raw (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    file_id BIGINT NOT NULL COMMENT '来源文件ID（数据不重复存储）',
-    batch_id VARCHAR(50) NOT NULL COMMENT '飞机批号（原始值，显示时加用户前缀区分）',
-    station_id VARCHAR(50) COMMENT '雷达站号',
-    time_stamp DATETIME(6) NOT NULL COMMENT '观测时间',
-    longitude DECIMAL(10, 7) COMMENT '经度',
-    latitude DECIMAL(10, 7) COMMENT '纬度',
-    altitude FLOAT COMMENT '高度（米，可选）',
-    speed FLOAT COMMENT '速度（m/s，可选）',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (file_id) REFERENCES data_files(id) ON DELETE CASCADE,
-    INDEX idx_file (file_id),
-    INDEX idx_batch_time (batch_id, time_stamp)
-) COMMENT '原始飞行轨迹表';
-
--- 修正后飞行轨迹表（算法处理结果）
-CREATE TABLE flight_tracks_corrected (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    batch_id VARCHAR(50) NOT NULL COMMENT '飞机批号',
-    time_stamp DATETIME(6) NOT NULL COMMENT '修正后时间',
-    longitude DECIMAL(10, 7) NOT NULL COMMENT '修正后经度',
-    latitude DECIMAL(10, 7) NOT NULL COMMENT '修正后纬度',
-    altitude FLOAT COMMENT '修正后高度（米）',
-    speed FLOAT COMMENT '修正后速度（m/s）',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_batch_time (batch_id, time_stamp)
-) COMMENT '修正后飞行轨迹表';
-```
-
-### 3.4 雷达站数据表（通过 file_id 关联）
-
-```sql
--- 雷达站信息表
-CREATE TABLE radar_stations (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    file_id BIGINT NOT NULL COMMENT '来源文件ID',
-    station_id VARCHAR(50) NOT NULL COMMENT '站号（原始值）',
-    longitude DECIMAL(10, 7) NOT NULL COMMENT '经度',
-    latitude DECIMAL(10, 7) NOT NULL COMMENT '纬度',
-    altitude FLOAT COMMENT '雷达站高度（米）',
-    description VARCHAR(255) COMMENT '备注说明',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (file_id) REFERENCES data_files(id) ON DELETE CASCADE,
-    INDEX idx_file (file_id)
-) COMMENT '雷达站信息表';
-```
-
-### 3.5 禁飞区表
-
-```sql
--- 用户自定义禁飞区表
-CREATE TABLE restricted_zones (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT NOT NULL COMMENT '所属用户ID',
-    name VARCHAR(100) NOT NULL COMMENT '禁飞区名称',
-    zone_type ENUM('circle', 'polygon') NOT NULL COMMENT '区域类型：圆形/多边形',
-    -- 圆形区域参数
-    center_lon DECIMAL(10, 7) COMMENT '圆心经度',
-    center_lat DECIMAL(10, 7) COMMENT '圆心纬度',
-    radius_km FLOAT COMMENT '半径（公里）',
-    -- 多边形区域参数（JSON格式存储顶点）
-    polygon_coords JSON COMMENT '多边形顶点坐标JSON',
-    min_altitude FLOAT COMMENT '最小高度限制（米），0表示无限制',
-    max_altitude FLOAT COMMENT '最大高度限制（米），NULL表示无限制',
-    is_active BOOLEAN DEFAULT TRUE COMMENT '是否启用',
-    alert_email BOOLEAN DEFAULT TRUE COMMENT '是否发送邮件预警',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) COMMENT '用户自定义禁飞区表';
-
--- 禁飞区入侵记录表
-CREATE TABLE zone_intrusions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    zone_id BIGINT NOT NULL COMMENT '禁飞区ID',
-    batch_id VARCHAR(50) NOT NULL COMMENT '入侵飞机批号',
-    intrusion_time DATETIME NOT NULL COMMENT '入侵时间',
-    location_lon DECIMAL(10, 7) NOT NULL COMMENT '入侵位置经度',
-    location_lat DECIMAL(10, 7) NOT NULL COMMENT '入侵位置纬度',
-    altitude FLOAT COMMENT '入侵时高度',
-    alert_sent BOOLEAN DEFAULT FALSE COMMENT '是否已发送邮件预警',
-    alert_sent_time DATETIME COMMENT '预警发送时间',
-    processed BOOLEAN DEFAULT FALSE COMMENT '是否已处理',
-    FOREIGN KEY (zone_id) REFERENCES restricted_zones(id) ON DELETE CASCADE
-) COMMENT '禁飞区入侵记录表';
-```
+数据关系：`users` → `data_files` → (`flight_tracks_raw`, `radar_stations`) → `flight_tracks_corrected`
 
 ---
 
