@@ -1,0 +1,4 @@
+from app.algorithms.registry import register_algorithm
+from app.algorithms.single_source.particle_filter.algorithm import ParticleFilterAlgorithm
+
+register_algorithm(ParticleFilterAlgorithm)

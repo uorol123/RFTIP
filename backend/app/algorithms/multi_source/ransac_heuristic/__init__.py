@@ -1,0 +1,4 @@
+from app.algorithms.registry import register_algorithm
+from app.algorithms.multi_source.ransac_heuristic.algorithm import RansacHeuristicAlgorithm
+
+register_algorithm(RansacHeuristicAlgorithm)

@@ -9,10 +9,10 @@ import os
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.utils.mrra.config import MrraConfig, CostWeights
-from app.utils.mrra.track_extractor import TrackPoint, TrackExtractor
-from app.utils.mrra.track_interpolator import TrackInterpolator
-from app.utils.mrra.error_calculator import ErrorCalculator
+from app.algorithms.multi_source.preprocessing.config import MrraConfig, CostWeights
+from app.algorithms.multi_source.preprocessing.track_extractor import TrackPoint, TrackExtractor
+from app.algorithms.multi_source.preprocessing.track_interpolator import TrackInterpolator
+from app.algorithms.multi_source.preprocessing.error_calculator import ErrorCalculator
 
 import numpy as np
 from typing import List, Dict, Tuple
@@ -204,7 +204,7 @@ def test_integration():
 
     # 步骤2: 提取关键航迹
     print("\n步骤2: 提取关键航迹")
-    from app.utils.mrra.track_extractor import extract_key_tracks
+    from app.algorithms.multi_source.preprocessing.track_extractor import extract_key_tracks
 
     key_tracks = extract_key_tracks(station_data, config)
     print(f"提取到 {sum(len(v) for v in key_tracks.values())} 个航迹段")
@@ -241,7 +241,7 @@ def test_integration():
         1002: (116.0005, 39.0005, 100.0),
     }
 
-    from app.utils.mrra.error_calculator import calculate_error_results
+    from app.algorithms.multi_source.preprocessing.error_calculator import calculate_error_results
 
     error_results = calculate_error_results(match_groups, radar_positions, config)
     print(f"计算了 {len(error_results['errors'])} 个雷达站的误差")

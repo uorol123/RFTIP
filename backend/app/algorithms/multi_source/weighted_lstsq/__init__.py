@@ -1,0 +1,4 @@
+from app.algorithms.registry import register_algorithm
+from app.algorithms.multi_source.weighted_lstsq.algorithm import WeightedLstsqAlgorithm
+
+register_algorithm(WeightedLstsqAlgorithm)

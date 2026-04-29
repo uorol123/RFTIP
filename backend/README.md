@@ -27,25 +27,34 @@
 backend/
 ├── app/                          # 应用主目录
 │   ├── __init__.py
+│   ├── algorithms/               # 算法模块
+│   │   ├── base.py              # 算法基类
+│   │   ├── registry.py          # 算法注册表
+│   │   ├── factory.py           # 算法工厂
+│   │   ├── multi_source/        # 多源参考模式
+│   │   │   ├── preprocessing/   #   预处理（提取、插值、匹配）
+│   │   │   ├── mrra/            #   MRRA 梯度下降算法
+│   │   │   ├── ransac/          #   RANSAC 算法
+│   │   │   ├── ransac_heuristic/#   RANSAC 启发式算法
+│   │   │   └── weighted_lstsq/  #   加权最小二乘算法
+│   │   └── single_source/       # 单源盲测模式
+│   │       ├── kalman/          #   卡尔曼滤波
+│   │       ├── particle_filter/ #   粒子滤波
+│   │       └── spline/          #   样条拟合
 │   ├── models/                   # SQLAlchemy 数据模型
-│   │   └── __init__.py
 │   ├── routers/                  # API 路由端点
-│   │   ├── __init__.py
-│   │   ├── auth.py              # 认证相关接口
-│   │   └── health.py            # 健康检查接口
 │   ├── schemas/                  # Pydantic 请求/响应模型
-│   │   └── __init__.py
 │   └── services/                 # 业务逻辑层
-│       └── __init__.py
 ├── core/                         # 核心配置与工具
-│   ├── __init__.py
-│   ├── config.py                # Pydantic 配置
-│   └── database.py              # 数据库连接与会话
-├── migrations/                   # Alembic 数据库迁移文件
+│   ├── config.py                # 应用配置
+│   ├── database.py              # 数据库连接与会话
+│   ├── exceptions.py            # 自定义异常
+│   ├── error_handler.py         # 全局异常处理
+│   ├── middleware.py            # 中间件
+│   └── logging.py               # 日志配置
 ├── tests/                        # 测试文件
 ├── .env                         # 环境变量（不提交）
 ├── .env.example                 # 环境变量示例
-├── alembic.ini                  # Alembic 配置
 ├── main.py                      # 应用入口
 ├── requirements.txt             # Python 依赖
 └── README.md                    # 本文档

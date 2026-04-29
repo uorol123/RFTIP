@@ -1,7 +1,7 @@
 """
 误差分析服务
 
-提供误差分析任务的管理和执行功能
+提供误差分析任务的管理和查询功能
 """
 import uuid
 from datetime import datetime, timedelta
@@ -15,7 +15,7 @@ from app.models.error_analysis import (
     ErrorResult,
     MatchGroup,
     TrackSegment,
-    SmoothedTrajectoryResult
+    SmoothedTrajectoryResult,
 )
 from app.models.flight_track import RadarStation
 from app.schemas.error_analysis import (
@@ -28,13 +28,10 @@ from app.schemas.error_analysis import (
     ErrorAnalysisSummary,
     ErrorResultResponse,
     MatchGroupResponse,
-    TrackSegmentResponse
+    TrackSegmentResponse,
 )
-from app.utils.mrra.config import MrraConfig
-from app.utils.mrra.track_extractor import TrackPoint, load_track_points_by_track_ids, extract_key_tracks
-from app.utils.mrra.track_interpolator import interpolate_and_save_tracks
-from app.utils.mrra.track_matcher import match_tracks_from_database, save_matched_groups, analyze_match_statistics
-from app.utils.mrra.error_calculator import calculate_error_results
+from app.algorithms.multi_source.preprocessing.config import MrraConfig
+from app.services.error_analysis_executor import execute_analysis, SINGLE_SOURCE_ALGORITHMS
 from core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,36 +41,16 @@ class ErrorAnalysisService:
     """误差分析服务类"""
 
     def __init__(self, db: Session):
-        """
-        初始化服务
-
-        Args:
-            db: 数据库会话
-        """
         self.db = db
 
     def create_analysis_task(
         self,
         request: ErrorAnalysisRequest,
-        user_id: int
+        user_id: int,
     ) -> ErrorAnalysisTaskResponse:
-        """
-        创建误差分析任务
-
-        Args:
-            request: 分析请求（包含雷达站ID列表和轨迹ID列表）
-            user_id: 用户ID
-
-        Returns:
-            任务响应
-        """
-        # 生成任务ID
         task_id = str(uuid.uuid4())
-
-        # 转换配置为字典
         config_dict = request.config.model_dump() if request.config else {}
 
-        # 创建任务记录
         task = ErrorAnalysisTask(
             task_id=task_id,
             radar_station_ids=request.radar_station_ids,
@@ -82,7 +59,7 @@ class ErrorAnalysisService:
             algorithm_name=request.algorithm,
             config=config_dict,
             status=ErrorAnalysisTaskStatus.PENDING,
-            progress=0
+            progress=0,
         )
 
         self.db.add(task)
@@ -99,13 +76,6 @@ class ErrorAnalysisService:
         return self._task_to_response(task)
 
     def execute_analysis(self, task_id: str) -> None:
-        """
-        执行误差分析任务
-
-        Args:
-            task_id: 任务ID
-        """
-        # 获取任务
         task = self.db.query(ErrorAnalysisTask).filter(
             ErrorAnalysisTask.task_id == task_id
         ).first()
@@ -116,250 +86,9 @@ class ErrorAnalysisService:
         if task.status != ErrorAnalysisTaskStatus.PENDING:
             raise ValueError(f"任务状态不正确: {task.status}")
 
-        # 获取算法名称
-        algorithm_name = task.algorithm_name or "gradient_descent"
+        execute_analysis(self.db, task)
 
-        try:
-            # 更新任务状态
-            task.status = ErrorAnalysisTaskStatus.EXTRACTING
-            task.started_at = datetime.utcnow()
-            self.db.commit()
-
-            # 使用 AlgorithmFactory 创建算法实例
-            from app.utils.error_analysis.factory import AlgorithmFactory
-
-            algorithm_config = task.config or {}
-
-            algorithm = AlgorithmFactory.create_algorithm_from_dict(
-                algorithm_name,
-                algorithm_config
-            )
-
-            logger.info(f"使用算法 {algorithm_name} 执行任务 {task_id}")
-
-            # 根据算法类型选择执行方式
-            if algorithm_name in ("ransac", "ransac_heuristic", "weighted_lstsq", "kalman", "particle_filter", "spline"):
-                # 新算法使用统一的 analyze() 接口
-                self._execute_with_algorithm_interface(task, algorithm)
-            else:
-                # 兼容旧的 MRRA 梯度下降流程
-                self._execute_with_legacy_flow(task, algorithm)
-
-            # 完成
-            task.status = ErrorAnalysisTaskStatus.COMPLETED
-            task.progress = 100
-            task.completed_at = datetime.utcnow()
-            self.db.commit()
-
-            logger.info(f"误差分析任务完成: {task_id}")
-
-        except Exception as e:
-            logger.error(f"误差分析任务失败: {task_id}, 错误: {str(e)}")
-            task.status = ErrorAnalysisTaskStatus.FAILED
-            task.error_message = str(e)
-            task.completed_at = datetime.utcnow()
-            self.db.commit()
-            raise
-
-    # 单源盲测算法列表
-    SINGLE_SOURCE_ALGORITHMS = ("kalman", "particle_filter", "spline")
-
-    def _execute_with_algorithm_interface(self, task: ErrorAnalysisTask, algorithm) -> None:
-        """使用算法框架的 analyze() 接口执行分析"""
-        result = algorithm.analyze(
-            task_id=task.task_id,
-            radar_station_ids=task.radar_station_ids,
-            track_ids=task.track_ids,
-            db_session=self.db,
-        )
-
-        if result.status == "failed":
-            raise RuntimeError(result.error_message or "算法执行失败")
-
-        # 根据算法类型选择存储方式
-        algorithm_name = task.algorithm_name or ""
-        is_single_source = algorithm_name in self.SINGLE_SOURCE_ALGORITHMS
-
-        if is_single_source:
-            # 单源盲测算法：保存平滑轨迹结果
-            self._save_smoothed_trajectory_results(task.task_id, result, algorithm)
-        else:
-            # 多源参考算法：保存误差结果
-            self._save_error_results_from_result(task.task_id, result)
-
-        # 保存结果元数据（融合轨迹、离群率等）
-        if result.metadata:
-            task.result_metadata = result.metadata
-
-        if result.match_statistics:
-            if not task.result_metadata:
-                task.result_metadata = {}
-            task.result_metadata["match_statistics"] = result.match_statistics
-
-        self.db.commit()
-
-    def _save_smoothed_trajectory_results(self, task_id: str, result, algorithm) -> None:
-        """保存单源盲测的平滑轨迹结果"""
-        metadata = result.metadata or {}
-        smoothed_trajectory = metadata.get("smoothed_trajectory", [])
-
-        # 按 (station_id, batch_id) 分组轨迹点
-        from collections import defaultdict
-        trajectories_by_key = defaultdict(list)
-
-        for point in smoothed_trajectory:
-            key = (point.get("station_id"), point.get("batch_id", "unknown"))
-            trajectories_by_key[key].append(point)
-
-        # 获取每站的误差统计
-        errors = result.errors or {}
-
-        for (station_id, batch_id), points in trajectories_by_key.items():
-            # 分离原始点和平滑点
-            original_points = []
-            smoothed_points = []
-
-            for p in points:
-                smoothed_points.append({
-                    "timestamp": p.get("timestamp"),
-                    "longitude": p.get("longitude"),
-                    "latitude": p.get("latitude"),
-                    "altitude": p.get("altitude"),
-                    "covariance_trace": p.get("covariance_trace"),
-                })
-                original_points.append({
-                    "longitude": p.get("orig_lon"),
-                    "latitude": p.get("orig_lat"),
-                    "altitude": p.get("orig_alt"),
-                })
-
-            # 获取该站点的 RMSE
-            station_errors = errors.get(station_id, {})
-            rmse_lat = station_errors.get("azimuth_error", 0.0)
-            rmse_lon = station_errors.get("range_error", 0.0) / 111000  # 距离误差转换为度
-            rmse_alt = station_errors.get("elevation_error", 0.0)
-
-            # 创建记录
-            record = SmoothedTrajectoryResult(
-                task_id=task_id,
-                station_id=station_id,
-                batch_id=batch_id,
-                original_trajectory=original_points,
-                smoothed_trajectory=smoothed_points,
-                rmse_lat=rmse_lat,
-                rmse_lon=rmse_lon,
-                rmse_alt=rmse_alt,
-                point_count=len(points),
-                process_noise=result.match_statistics.get("process_noise") if result.match_statistics else None,
-                measurement_noise=result.match_statistics.get("measurement_noise") if result.match_statistics else None,
-            )
-            self.db.add(record)
-
-    def _save_error_results_from_result(self, task_id: str, result) -> None:
-        """从算法执行结果保存误差结果（多源参考算法）"""
-        for station_id, errors in result.errors.items():
-            error_record = ErrorResult(
-                task_id=task_id,
-                station_id=station_id,
-                azimuth_error=errors.get("azimuth_error", 0.0),
-                range_error=errors.get("range_error", 0.0),
-                elevation_error=errors.get("elevation_error", 0.0),
-                match_count=result.match_statistics.get("total_match_groups", 0),
-                confidence=result.match_statistics.get("station_weights", {}).get(str(station_id)),
-            )
-            self.db.add(error_record)
-
-    def _execute_with_legacy_flow(self, task: ErrorAnalysisTask, algorithm) -> None:
-        """
-        使用旧的 MRRA 流程执行分析（向后兼容）
-
-        Args:
-            task: 任务对象
-            algorithm: 算法实例
-        """
-        # 加载配置（过滤掉 MrraConfig 不支持的字段）
-        if task.config:
-            mrra_fields = set(MrraConfig.model_fields.keys())
-            filtered = {k: v for k, v in task.config.items() if k in mrra_fields}
-            config = MrraConfig(**filtered)
-        else:
-            config = MrraConfig()
-
-        # 获取选中的雷达站位置
-        radar_stations = self.db.query(RadarStation).filter(
-            RadarStation.id.in_(task.radar_station_ids)
-        ).all()
-        radar_positions = {
-            station.id: (station.longitude, station.latitude, station.altitude or 0.0)
-            for station in radar_stations
-        }
-
-        if not radar_positions:
-            raise ValueError("没有找到指定的雷达站位置信息")
-
-        logger.info(f"使用 {len(radar_positions)} 个雷达站: {task.radar_station_ids}")
-
-        # 步骤1: 加载航迹数据（按轨迹编号筛选）
-        self.update_progress(task.task_id, 10, "加载航迹数据")
-        station_data = load_track_points_by_track_ids(self.db, task.track_ids, radar_positions)
-
-        if not station_data:
-            raise ValueError("没有找到有效的航迹数据")
-
-        # 步骤2: 提取关键航迹
-        task.status = ErrorAnalysisTaskStatus.EXTRACTING
-        self.update_progress(task.task_id, 20, "提取关键航迹")
-        key_tracks = extract_key_tracks(station_data, config)
-
-        if not key_tracks:
-            raise ValueError("没有提取到关键航迹")
-
-        # 步骤3: 插值
-        task.status = ErrorAnalysisTaskStatus.INTERPOLATING
-        self.update_progress(task.task_id, 40, "航迹插值")
-
-        # 获取参考时间（使用第一条轨迹的时间）
-        from app.models.flight_track import FlightTrackRaw
-        first_track = self.db.query(FlightTrackRaw).filter(
-            FlightTrackRaw.batch_id.in_(task.track_ids)
-        ).order_by(FlightTrackRaw.timestamp).first()
-        reference_time = first_track.timestamp.replace(hour=0, minute=0, second=0, microsecond=0) if first_track else datetime.utcnow()
-
-        interpolate_and_save_tracks(self.db, task.task_id, key_tracks, config, reference_time)
-
-        # 步骤4: 匹配
-        task.status = ErrorAnalysisTaskStatus.MATCHING
-        self.update_progress(task.task_id, 60, "航迹匹配")
-        matched_groups = match_tracks_from_database(self.db, task.task_id, config)
-
-        if not matched_groups:
-            raise ValueError("没有匹配到航迹组")
-
-        # 保存匹配结果
-        save_matched_groups(self.db, task.task_id, matched_groups, reference_time)
-
-        # 步骤5: 计算误差
-        task.status = ErrorAnalysisTaskStatus.CALCULATING
-        self.update_progress(task.task_id, 80, "计算雷达误差")
-        error_results = calculate_error_results(matched_groups, radar_positions, config)
-
-        # 保存误差结果
-        self._save_error_results(task.task_id, error_results)
-
-    def update_progress(
-        self,
-        task_id: str,
-        progress: int,
-        message: Optional[str] = None
-    ) -> None:
-        """
-        更新任务进度
-
-        Args:
-            task_id: 任务ID
-            progress: 进度百分比
-            message: 进度消息
-        """
+    def update_progress(self, task_id: str, progress: int, message: Optional[str] = None) -> None:
         task = self.db.query(ErrorAnalysisTask).filter(
             ErrorAnalysisTask.task_id == task_id
         ).first()
@@ -370,15 +99,6 @@ class ErrorAnalysisService:
             logger.debug(f"任务 {task_id} 进度: {progress}% - {message}")
 
     def get_task_status(self, task_id: str) -> ErrorAnalysisTaskResponse:
-        """
-        获取任务状态
-
-        Args:
-            task_id: 任务ID
-
-        Returns:
-            任务响应
-        """
         task = self.db.query(ErrorAnalysisTask).filter(
             ErrorAnalysisTask.task_id == task_id
         ).first()
@@ -389,15 +109,6 @@ class ErrorAnalysisService:
         return self._task_to_response(task)
 
     def get_analysis_results(self, task_id: str) -> ErrorAnalysisResult:
-        """
-        获取分析结果
-
-        Args:
-            task_id: 任务ID
-
-        Returns:
-            分析结果
-        """
         task = self.db.query(ErrorAnalysisTask).filter(
             ErrorAnalysisTask.task_id == task_id
         ).first()
@@ -408,35 +119,29 @@ class ErrorAnalysisService:
         if task.status != ErrorAnalysisTaskStatus.COMPLETED:
             raise ValueError(f"任务未完成: {task.status}")
 
-        # 获取误差结果
         error_results = self.db.query(ErrorResult).filter(
             ErrorResult.task_id == task_id
         ).all()
 
-        # 获取匹配统计
         match_groups = self.db.query(MatchGroup).filter(
             MatchGroup.task_id == task_id
         ).all()
 
-        # 计算统计信息
         match_statistics = self._calculate_match_statistics(match_groups)
 
-        # 获取航迹段数量
         segments_count = self.db.query(TrackSegment).filter(
             TrackSegment.task_id == task_id
         ).count()
 
-        # 计算处理时间
         processing_time = 0.0
         if task.started_at and task.completed_at:
             processing_time = (task.completed_at - task.started_at).total_seconds()
 
-        # 构建结果
         summary = ErrorAnalysisSummary(
             total_stations=len(error_results),
             total_matches=len(match_groups),
             processing_time=processing_time,
-            segments_extracted=segments_count
+            segments_extracted=segments_count,
         )
 
         errors = [
@@ -449,7 +154,7 @@ class ErrorAnalysisService:
                 match_count=e.match_count,
                 confidence=e.confidence,
                 iterations=e.iterations,
-                final_cost=e.final_cost
+                final_cost=e.final_cost,
             )
             for e in error_results
         ]
@@ -467,19 +172,10 @@ class ErrorAnalysisService:
             summary=summary,
             errors=errors,
             match_statistics=match_statistics,
-            config=config
+            config=config,
         )
 
     def get_chart_data(self, task_id: str) -> ErrorChartResponse:
-        """
-        获取图表数据
-
-        Args:
-            task_id: 任务ID
-
-        Returns:
-            图表数据
-        """
         task = self.db.query(ErrorAnalysisTask).filter(
             ErrorAnalysisTask.task_id == task_id
         ).first()
@@ -487,12 +183,10 @@ class ErrorAnalysisService:
         if not task:
             raise ValueError(f"任务不存在: {task_id}")
 
-        # 获取误差结果
         error_results = self.db.query(ErrorResult).filter(
             ErrorResult.task_id == task_id
         ).order_by(ErrorResult.station_id).all()
 
-        # 获取雷达站信息
         radar_stations = self.db.query(RadarStation).all()
         station_map = {s.id: s.description or s.station_id or f"站{s.id}" for s in radar_stations}
 
@@ -511,7 +205,6 @@ class ErrorAnalysisService:
             confidences.append(e.confidence or 0.0)
             match_counts.append(e.match_count)
 
-        # 获取匹配组大小分布
         match_groups = self.db.query(MatchGroup).filter(
             MatchGroup.task_id == task_id
         ).all()
@@ -528,24 +221,10 @@ class ErrorAnalysisService:
             elevation_errors=elevation_errors,
             confidences=confidences,
             match_counts=match_counts,
-            group_size_distribution=group_size_distribution
+            group_size_distribution=group_size_distribution,
         )
 
-    def get_track_segments(
-        self,
-        task_id: str,
-        limit: int = 100
-    ) -> List[TrackSegmentResponse]:
-        """
-        获取航迹段列表
-
-        Args:
-            task_id: 任务ID
-            limit: 限制数量
-
-        Returns:
-            航迹段列表
-        """
+    def get_track_segments(self, task_id: str, limit: int = 100) -> List[TrackSegmentResponse]:
         segments = self.db.query(TrackSegment).filter(
             TrackSegment.task_id == task_id
         ).limit(limit).all()
@@ -560,26 +239,12 @@ class ErrorAnalysisService:
                 end_time=s.end_time,
                 point_count=s.point_count,
                 start_point_index=s.start_point_index,
-                end_point_index=s.end_point_index
+                end_point_index=s.end_point_index,
             )
             for s in segments
         ]
 
-    def get_match_groups(
-        self,
-        task_id: str,
-        limit: int = 100
-    ) -> List[MatchGroupResponse]:
-        """
-        获取匹配组列表
-
-        Args:
-            task_id: 任务ID
-            limit: 限制数量
-
-        Returns:
-            匹配组列表
-        """
+    def get_match_groups(self, task_id: str, limit: int = 100) -> List[MatchGroupResponse]:
         from app.schemas.error_analysis import MatchPoint
 
         groups = self.db.query(MatchGroup).filter(
@@ -594,7 +259,7 @@ class ErrorAnalysisService:
                     point_id=p.get('point_id'),
                     longitude=p['longitude'],
                     latitude=p['latitude'],
-                    altitude=p.get('altitude')
+                    altitude=p.get('altitude'),
                 )
                 for p in g.match_points
             ]
@@ -607,7 +272,7 @@ class ErrorAnalysisService:
                 point_count=g.point_count,
                 avg_distance=g.avg_distance,
                 max_distance=g.max_distance,
-                variance=g.variance
+                variance=g.variance,
             ))
 
         return result
@@ -616,19 +281,8 @@ class ErrorAnalysisService:
         self,
         user_id: Optional[int] = None,
         limit: int = 20,
-        offset: int = 0
+        offset: int = 0,
     ) -> Tuple[List[ErrorAnalysisTaskResponse], int]:
-        """
-        列出任务
-
-        Args:
-            user_id: 用户ID（可选）
-            limit: 限制数量
-            offset: 偏移量
-
-        Returns:
-            (任务列表, 总数)
-        """
         query = self.db.query(ErrorAnalysisTask)
 
         if user_id is not None:
@@ -639,120 +293,13 @@ class ErrorAnalysisService:
 
         return [self._task_to_response(t) for t in tasks], total
 
-    def _save_error_results(self, task_id: str, error_results: Dict) -> None:
-        """
-        保存误差结果到数据库
-
-        Args:
-            task_id: 任务ID
-            error_results: 误差结果字典
-        """
-        match_group_count = error_results.get('match_group_count', 0)
-
-        for station_id, errors in error_results['errors'].items():
-            result = ErrorResult(
-                task_id=task_id,
-                station_id=station_id,
-                azimuth_error=errors.get('azimuth_error', 0.0),
-                range_error=errors.get('range_error', 0.0),
-                elevation_error=errors.get('elevation_error', 0.0),
-                match_count=match_group_count,
-                confidence=errors.get('confidence'),
-                iterations=errors.get('iterations'),
-                final_cost=errors.get('final_cost'),
-            )
-            self.db.add(result)
-
-        self.db.commit()
-
-    def _calculate_match_statistics(self, match_groups: List[MatchGroup]) -> MatchStatistics:
-        """
-        计算匹配统计信息
-
-        Args:
-            match_groups: 匹配组列表
-
-        Returns:
-            匹配统计
-        """
-        if not match_groups:
-            return MatchStatistics(
-                total_groups=0,
-                group_size_avg=0.0,
-                group_size_std=0.0,
-                distance_avg=0.0,
-                distance_std=0.0,
-                min_group_size=0,
-                max_group_size=0
-            )
-
-        sizes = [g.point_count for g in match_groups]
-        avg_distances = [g.avg_distance for g in match_groups if g.avg_distance is not None]
-
-        import numpy as np
-
-        return MatchStatistics(
-            total_groups=len(match_groups),
-            group_size_avg=float(np.mean(sizes)),
-            group_size_std=float(np.std(sizes)),
-            distance_avg=float(np.mean(avg_distances)) if avg_distances else 0.0,
-            distance_std=float(np.std(avg_distances)) if avg_distances else 0.0,
-            min_group_size=int(np.min(sizes)),
-            max_group_size=int(np.max(sizes))
-        )
-
-    def _task_to_response(self, task: ErrorAnalysisTask) -> ErrorAnalysisTaskResponse:
-        """
-        将任务模型转换为响应
-
-        Args:
-            task: 任务模型
-
-        Returns:
-            任务响应
-        """
-        # 获取雷达站的 station_id 字符串用于显示
-        station_ids_display = task.radar_station_ids or []
-        if task.radar_station_ids:
-            stations = self.db.query(RadarStation.station_id).filter(
-                RadarStation.id.in_(task.radar_station_ids)
-            ).all()
-            station_ids_display = [s.station_id for s in stations]
-
-        return ErrorAnalysisTaskResponse(
-            id=task.id,
-            task_id=task.task_id,
-            radar_station_ids=station_ids_display,  # 返回 station_id 字符串用于显示
-            track_ids=task.track_ids or [],
-            user_id=task.user_id,
-            algorithm_name=task.algorithm_name,
-            status=task.status,
-            progress=task.progress,
-            error_message=task.error_message,
-            created_at=task.created_at,
-            started_at=task.started_at,
-            completed_at=task.completed_at
-        )
-
     def get_task_detail_full(
         self,
         task_id: str,
         include_intermediate: bool = True,
-        include_points: bool = False
+        include_points: bool = False,
     ) -> Dict:
-        """
-        获取完整任务详情
-
-        Args:
-            task_id: 任务ID
-            include_intermediate: 是否包含中间步骤详细数据
-            include_points: 是否包含插值点明细（数据量大，默认不返回）
-
-        Returns:
-            完整任务详情字典
-        """
         from app.schemas.error_analysis import (
-            ErrorAnalysisConfig,
             ProcessStepInfo,
             InterpolationSummary,
             TrackSegmentDetail,
@@ -761,7 +308,6 @@ class ErrorAnalysisService:
             InterpolatedPointResponse,
         )
 
-        # 1. 获取任务基本信息
         task = self.db.query(ErrorAnalysisTask).filter(
             ErrorAnalysisTask.task_id == task_id
         ).first()
@@ -769,17 +315,14 @@ class ErrorAnalysisService:
         if not task:
             raise ValueError(f"任务不存在: {task_id}")
 
-        # 获取雷达站信息
         radar_stations = self.db.query(RadarStation).all()
         station_map = {s.id: s for s in radar_stations}
         station_names = {s.id: s.description or s.station_id or f"站{s.id}" for s in radar_stations}
 
-        # 计算处理时间
         processing_time = 0.0
         if task.started_at and task.completed_at:
             processing_time = (task.completed_at - task.started_at).total_seconds()
 
-        # 2. 构建流程步骤信息
         if task.config:
             config_fields = set(ErrorAnalysisConfig.model_fields.keys())
             filtered = {k: v for k, v in task.config.items() if k in config_fields}
@@ -788,7 +331,7 @@ class ErrorAnalysisService:
             config = ErrorAnalysisConfig()
         process_steps = self._build_process_steps(task, processing_time)
 
-        # 3. 获取航迹段数据
+        # 航迹段数据
         segments = self.db.query(TrackSegment).filter(
             TrackSegment.task_id == task_id
         ).all()
@@ -810,11 +353,10 @@ class ErrorAnalysisService:
                 start_point_index=s.start_point_index,
                 end_point_index=s.end_point_index,
                 duration_seconds=duration,
-                station_name=station_name
+                station_name=station_name,
             )
             segments_detail.append(detail)
 
-            # 按雷达站统计
             if station_name not in segments_by_station:
                 segments_by_station[station_name] = 0
             segments_by_station[station_name] += 1
@@ -822,17 +364,18 @@ class ErrorAnalysisService:
         segments_summary = {
             "total_segments": len(segments),
             "total_points": sum(s.point_count for s in segments),
-            "by_station": segments_by_station
+            "by_station": segments_by_station,
         }
 
-        # 4. 获取插值点数据
+        # 插值点数据
+        from app.models.error_analysis import TrackInterpolatedPoint
+
         interpolation_summary = None
         interpolated_points = []
         if include_points:
-            from app.models.error_analysis import TrackInterpolatedPoint
             points = self.db.query(TrackInterpolatedPoint).filter(
                 TrackInterpolatedPoint.task_id == task_id
-            ).limit(10000).all()  # 限制最多返回10000条
+            ).limit(10000).all()
 
             points_by_station = {}
             original_count = 0
@@ -859,32 +402,30 @@ class ErrorAnalysisService:
                     longitude=p.longitude,
                     latitude=p.latitude,
                     altitude=p.altitude,
-                    is_original=is_original
+                    is_original=is_original,
                 ))
 
             interpolation_summary = InterpolationSummary(
                 total_points=len(points),
                 original_points=original_count,
                 interpolated_points=interpolated_count,
-                stations=points_by_station
+                stations=points_by_station,
             )
         else:
-            # 只统计，不返回明细
-            from app.models.error_analysis import TrackInterpolatedPoint
             total_points = self.db.query(TrackInterpolatedPoint).filter(
                 TrackInterpolatedPoint.task_id == task_id
             ).count()
             original_points = self.db.query(TrackInterpolatedPoint).filter(
                 TrackInterpolatedPoint.task_id == task_id,
-                TrackInterpolatedPoint.is_original == 1
+                TrackInterpolatedPoint.is_original == 1,
             ).count()
 
             points_by_station = {}
             points = self.db.query(
                 TrackInterpolatedPoint.station_id,
-                func.count(TrackInterpolatedPoint.id).label('count')
+                func.count(TrackInterpolatedPoint.id).label('count'),
             ).filter(
-                TrackInterpolatedPoint.task_id == task_id
+                TrackInterpolatedPoint.task_id == task_id,
             ).group_by(TrackInterpolatedPoint.station_id).all()
 
             for p in points:
@@ -895,27 +436,20 @@ class ErrorAnalysisService:
                 total_points=total_points,
                 original_points=original_points,
                 interpolated_points=total_points - original_points,
-                stations=points_by_station
+                stations=points_by_station,
             )
 
-        # 5. 获取匹配组数据
+        # 匹配组数据
         match_groups_db = self.db.query(MatchGroup).filter(
             MatchGroup.task_id == task_id
         ).all()
 
         match_groups_detail = []
         for g in match_groups_db:
-            # 提取涉及的雷达站
             station_ids = list(set(
                 p.get('station_id') for p in (g.match_points or [])
                 if isinstance(p, dict) and p.get('station_id') is not None
             ))
-
-            # 计算时间差
-            time_diff_ms = 0.0
-            if g.match_time:
-                # 简单计算：第一个点和最后一个点的时间差
-                time_diff_ms = 0.0
 
             match_groups_detail.append(MatchGroupDetail(
                 id=g.id,
@@ -927,13 +461,11 @@ class ErrorAnalysisService:
                 max_distance=g.max_distance,
                 variance=g.variance,
                 station_ids=station_ids,
-                time_difference_ms=time_diff_ms
+                time_difference_ms=0.0,
             ))
 
-        # 计算匹配统计
         if match_groups_db:
             avg_distances = [g.avg_distance for g in match_groups_db if g.avg_distance is not None]
-            # 提取所有涉及的雷达站ID
             all_station_ids = set()
             for g in match_groups_db:
                 for p in (g.match_points or []):
@@ -943,27 +475,26 @@ class ErrorAnalysisService:
                 "total_groups": len(match_groups_db),
                 "total_points": sum(g.point_count for g in match_groups_db),
                 "avg_distance_mean": sum(avg_distances) / len(avg_distances) if avg_distances else 0.0,
-                "stations_involved": len(all_station_ids)
+                "stations_involved": len(all_station_ids),
             }
         else:
             match_summary = {
                 "total_groups": 0,
                 "total_points": 0,
                 "avg_distance_mean": 0.0,
-                "stations_involved": 0
+                "stations_involved": 0,
             }
 
-        # 6. 获取误差结果详情
+        # 误差结果
         error_results_db = self.db.query(ErrorResult).filter(
             ErrorResult.task_id == task_id
         ).all()
 
         error_results_detail = []
         for e in error_results_db:
-            # 质量评级
-            azimuth_quality = self._evaluate_quality(e.azimuth_error, "azimuth")
-            range_quality = self._evaluate_quality(e.range_error, "range")
-            elevation_quality = self._evaluate_quality(e.elevation_error, "elevation")
+            azimuth_quality = _evaluate_quality(e.azimuth_error, "azimuth")
+            range_quality = _evaluate_quality(e.range_error, "range")
+            elevation_quality = _evaluate_quality(e.elevation_error, "elevation")
 
             error_results_detail.append(ErrorResultDetail(
                 id=e.id,
@@ -978,35 +509,33 @@ class ErrorAnalysisService:
                 final_cost=e.final_cost,
                 azimuth_quality=azimuth_quality,
                 range_quality=range_quality,
-                elevation_quality=elevation_quality
+                elevation_quality=elevation_quality,
             ))
 
-        # 7. 获取平滑轨迹结果（单源盲测算法）
+        # 平滑轨迹结果（单源盲测算法）
         from app.schemas.error_analysis import SmoothedTrajectoryResponse, SmoothedTrajectoryPoint
         smoothed_trajectories = []
         algorithm_name = task.algorithm_name or ""
 
-        if algorithm_name in self.SINGLE_SOURCE_ALGORITHMS:
+        if algorithm_name in SINGLE_SOURCE_ALGORITHMS:
             smoothed_results = self.db.query(SmoothedTrajectoryResult).filter(
                 SmoothedTrajectoryResult.task_id == task_id
             ).all()
 
             for sr in smoothed_results:
-                # 转换原始轨迹点
-                original_points = []
+                original_points_list = []
                 for p in (sr.original_trajectory or []):
                     if isinstance(p, dict):
-                        original_points.append(SmoothedTrajectoryPoint(
+                        original_points_list.append(SmoothedTrajectoryPoint(
                             longitude=p.get("longitude", 0.0),
                             latitude=p.get("latitude", 0.0),
                             altitude=p.get("altitude"),
                         ))
 
-                # 转换平滑轨迹点
-                smoothed_points = []
+                smoothed_points_list = []
                 for p in (sr.smoothed_trajectory or []):
                     if isinstance(p, dict):
-                        smoothed_points.append(SmoothedTrajectoryPoint(
+                        smoothed_points_list.append(SmoothedTrajectoryPoint(
                             timestamp=p.get("timestamp"),
                             longitude=p.get("longitude", 0.0),
                             latitude=p.get("latitude", 0.0),
@@ -1019,8 +548,8 @@ class ErrorAnalysisService:
                     station_id=sr.station_id,
                     station_name=station_names.get(sr.station_id, f"站{sr.station_id}"),
                     batch_id=sr.batch_id,
-                    original_trajectory=original_points,
-                    smoothed_trajectory=smoothed_points,
+                    original_trajectory=original_points_list,
+                    smoothed_trajectory=smoothed_points_list,
                     rmse_lat=sr.rmse_lat,
                     rmse_lon=sr.rmse_lon,
                     rmse_alt=sr.rmse_alt,
@@ -1029,7 +558,6 @@ class ErrorAnalysisService:
                     measurement_noise=sr.measurement_noise,
                 ))
 
-        # 8. 组装返回
         return {
             "task_id": task.task_id,
             "status": task.status,
@@ -1054,41 +582,87 @@ class ErrorAnalysisService:
             "processing_time_seconds": processing_time,
             "total_segments": len(segments),
             "total_match_groups": len(match_groups_db),
-            "total_interpolated_points": interpolation_summary.total_points if interpolation_summary else 0
+            "total_interpolated_points": interpolation_summary.total_points if interpolation_summary else 0,
         }
 
-    def _build_process_steps(self, task: ErrorAnalysisTask, processing_time: float) -> List[Dict]:
-        """构建流程步骤信息"""
-        from app.schemas.error_analysis import ProcessStepInfo
+    def _calculate_match_statistics(self, match_groups: List[MatchGroup]) -> MatchStatistics:
+        if not match_groups:
+            return MatchStatistics(
+                total_groups=0,
+                group_size_avg=0.0,
+                group_size_std=0.0,
+                distance_avg=0.0,
+                distance_std=0.0,
+                min_group_size=0,
+                max_group_size=0,
+            )
 
+        import numpy as np
+
+        sizes = [g.point_count for g in match_groups]
+        avg_distances = [g.avg_distance for g in match_groups if g.avg_distance is not None]
+
+        return MatchStatistics(
+            total_groups=len(match_groups),
+            group_size_avg=float(np.mean(sizes)),
+            group_size_std=float(np.std(sizes)),
+            distance_avg=float(np.mean(avg_distances)) if avg_distances else 0.0,
+            distance_std=float(np.std(avg_distances)) if avg_distances else 0.0,
+            min_group_size=int(np.min(sizes)),
+            max_group_size=int(np.max(sizes)),
+        )
+
+    def _task_to_response(self, task: ErrorAnalysisTask) -> ErrorAnalysisTaskResponse:
+        station_ids_display = task.radar_station_ids or []
+        if task.radar_station_ids:
+            stations = self.db.query(RadarStation.station_id).filter(
+                RadarStation.id.in_(task.radar_station_ids)
+            ).all()
+            station_ids_display = [s.station_id for s in stations]
+
+        return ErrorAnalysisTaskResponse(
+            id=task.id,
+            task_id=task.task_id,
+            radar_station_ids=station_ids_display,
+            track_ids=task.track_ids or [],
+            user_id=task.user_id,
+            algorithm_name=task.algorithm_name,
+            status=task.status,
+            progress=task.progress,
+            error_message=task.error_message,
+            created_at=task.created_at,
+            started_at=task.started_at,
+            completed_at=task.completed_at,
+        )
+
+    def _build_process_steps(self, task: ErrorAnalysisTask, processing_time: float) -> List[Dict]:
         steps = [
             {
                 "step_id": "extracting",
                 "step_name": "航迹提取",
                 "step_description": "从原始雷达数据中提取飞机航迹，根据时间连续性和空间相关性将点连接成段",
-                "status": "completed" if task.status != ErrorAnalysisTaskStatus.PENDING else "pending"
+                "status": "completed" if task.status != ErrorAnalysisTaskStatus.PENDING else "pending",
             },
             {
                 "step_id": "interpolating",
                 "step_name": "航迹插值",
                 "step_description": "对航迹进行时间对齐和空间插值，使不同雷达站的航迹能够在同一时间点进行比较",
-                "status": "completed" if task.status in [ErrorAnalysisTaskStatus.COMPLETED, ErrorAnalysisTaskStatus.CALCULATING, ErrorAnalysisTaskStatus.MATCHING] else "pending"
+                "status": "completed" if task.status in [ErrorAnalysisTaskStatus.COMPLETED, ErrorAnalysisTaskStatus.CALCULATING, ErrorAnalysisTaskStatus.MATCHING] else "pending",
             },
             {
                 "step_id": "matching",
                 "step_name": "航迹匹配",
                 "step_description": "在时间窗口内，将不同雷达站观测到的同一架飞机进行匹配，形成匹配组",
-                "status": "completed" if task.status in [ErrorAnalysisTaskStatus.COMPLETED, ErrorAnalysisTaskStatus.CALCULATING] else "pending"
+                "status": "completed" if task.status in [ErrorAnalysisTaskStatus.COMPLETED, ErrorAnalysisTaskStatus.CALCULATING] else "pending",
             },
             {
                 "step_id": "calculating",
                 "step_name": "误差计算",
                 "step_description": "基于匹配组结果，计算各雷达站的系统误差（方位角、距离、俯仰角）",
-                "status": "completed" if task.status == ErrorAnalysisTaskStatus.COMPLETED else "pending"
-            }
+                "status": "completed" if task.status == ErrorAnalysisTaskStatus.COMPLETED else "pending",
+            },
         ]
 
-        # 根据任务状态更新步骤状态
         status_mapping = {
             ErrorAnalysisTaskStatus.PENDING: ["pending", "pending", "pending", "pending"],
             ErrorAnalysisTaskStatus.EXTRACTING: ["running", "pending", "pending", "pending"],
@@ -1096,35 +670,35 @@ class ErrorAnalysisService:
             ErrorAnalysisTaskStatus.MATCHING: ["completed", "completed", "running", "pending"],
             ErrorAnalysisTaskStatus.CALCULATING: ["completed", "completed", "completed", "running"],
             ErrorAnalysisTaskStatus.COMPLETED: ["completed", "completed", "completed", "completed"],
-            ErrorAnalysisTaskStatus.FAILED: ["completed", "completed", "completed", "failed"]
+            ErrorAnalysisTaskStatus.FAILED: ["completed", "completed", "completed", "failed"],
         }
 
         mapped_statuses = status_mapping.get(task.status, ["pending"] * 4)
         for i, step in enumerate(steps):
             step["status"] = mapped_statuses[i]
-            step["duration_seconds"] = None  # 可以后续添加更精确的时间统计
+            step["duration_seconds"] = None
 
         return steps
 
-    def _evaluate_quality(self, value: float, error_type: str) -> str:
-        """评估误差质量等级"""
-        thresholds = {
-            "azimuth": [0.5, 1.0, 2.0],  # 方位角阈值（度）
-            "range": [50, 100, 200],       # 距离阈值（米）
-            "elevation": [0.5, 1.0, 2.0]   # 俯仰角阈值（度）
-        }
 
-        if error_type not in thresholds:
-            return "unknown"
+def _evaluate_quality(value: float, error_type: str) -> str:
+    thresholds = {
+        "azimuth": [0.5, 1.0, 2.0],
+        "range": [50, 100, 200],
+        "elevation": [0.5, 1.0, 2.0],
+    }
 
-        t = thresholds[error_type]
-        abs_value = abs(value)
+    if error_type not in thresholds:
+        return "unknown"
 
-        if abs_value <= t[0]:
-            return "excellent"
-        elif abs_value <= t[1]:
-            return "good"
-        elif abs_value <= t[2]:
-            return "fair"
-        else:
-            return "poor"
+    t = thresholds[error_type]
+    abs_value = abs(value)
+
+    if abs_value <= t[0]:
+        return "excellent"
+    elif abs_value <= t[1]:
+        return "good"
+    elif abs_value <= t[2]:
+        return "fair"
+    else:
+        return "poor"

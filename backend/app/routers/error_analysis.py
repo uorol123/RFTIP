@@ -586,7 +586,7 @@ def execute_analysis_task(db: Session, task_id: str):
 
 # ========== 算法管理端点 ==========
 
-from app.utils.error_analysis import registry, AlgorithmFactory
+from app.algorithms import registry, AlgorithmFactory
 
 
 @router.get("/algorithms")
