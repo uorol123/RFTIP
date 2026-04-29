@@ -6,26 +6,27 @@
 2. 算法接口：可扩展的修正算法接口
 3. 数据模型：统一的轨迹数据模型
 
-参考文档：docs/参考.md (MRRA 雷达误差分析方法)
 """
+
 import json
 import math
+from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Protocol, Tuple
+
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import List, Optional, Tuple, Dict, Protocol
-from abc import ABC, abstractmethod
-from sqlalchemy.orm import Session
-from sklearn.linear_model import RANSACRegressor
 from filterpy.kalman import KalmanFilter
+from sklearn.linear_model import RANSACRegressor
+from sqlalchemy.orm import Session
 
-from app.models.flight_track import FlightTrackRaw, FlightTrackCorrected
+from app.models.flight_track import FlightTrackCorrected, FlightTrackRaw
 from app.schemas.track import TrackProcessRequest, TrackProcessResponse
-
 
 # ============================================================================
 # 配置常量
 # ============================================================================
+
 
 class PreprocessingConfig:
     """预处理配置（基于参考文档和数据分析）"""
@@ -45,12 +46,13 @@ class PreprocessingConfig:
 
     # 速度阈值（用于噪音过滤，从位置计算）
     MAX_SPEED_KMH = 800  # 最大合理速度
-    MIN_SPEED_KMH = 50   # 最小合理速度
+    MIN_SPEED_KMH = 50  # 最小合理速度
 
 
 # ============================================================================
 # 工具函数
 # ============================================================================
+
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """计算两点之间的球面距离（米）"""
@@ -59,9 +61,10 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
 
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(lat1_rad) * math.cos(lat2_rad) *
-         math.sin(dlon / 2) ** 2)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2
+    )
 
     return R * 2 * math.asin(math.sqrt(a))
 
@@ -73,17 +76,15 @@ def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     dlon = math.radians(lon2 - lon1)
 
     y = math.sin(dlon) * math.cos(lat2_rad)
-    x = (math.cos(lat1_rad) * math.sin(lat2_rad) -
-         math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(dlon))
+    x = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(
+        lat2_rad
+    ) * math.cos(dlon)
 
     bearing = math.atan2(y, x)
     return (math.degrees(bearing) + 360) % 360
 
 
-def calculate_velocity(
-    point1: Dict,
-    point2: Dict
-) -> Tuple[float, float, float]:
+def calculate_velocity(point1: Dict, point2: Dict) -> Tuple[float, float, float]:
     """
     从位置数据计算速度和航向
 
@@ -91,11 +92,10 @@ def calculate_velocity(
         (速度_mps, 速度_kmh, 航向度)
     """
     distance = haversine_distance(
-        point1['latitude'], point1['longitude'],
-        point2['latitude'], point2['longitude']
+        point1["latitude"], point1["longitude"], point2["latitude"], point2["longitude"]
     )
 
-    time_diff = (point2['timestamp'] - point1['timestamp']).total_seconds()
+    time_diff = (point2["timestamp"] - point1["timestamp"]).total_seconds()
 
     if time_diff == 0:
         return 0, 0, 0
@@ -104,8 +104,7 @@ def calculate_velocity(
     speed_kmh = speed_mps * 3.6
 
     heading = calculate_bearing(
-        point1['latitude'], point1['longitude'],
-        point2['latitude'], point2['longitude']
+        point1["latitude"], point1["longitude"], point2["latitude"], point2["longitude"]
     )
 
     return speed_mps, speed_kmh, heading
@@ -114,6 +113,7 @@ def calculate_velocity(
 # ============================================================================
 # 算法接口定义
 # ============================================================================
+
 
 class TrackCorrectionAlgorithm(ABC):
     """轨迹修正算法接口"""
@@ -134,10 +134,7 @@ class TrackCorrectionAlgorithm(ABC):
         pass
 
     @abstractmethod
-    def correct(
-        self,
-        observations: List[Dict]
-    ) -> Dict:
+    def correct(self, observations: List[Dict]) -> Dict:
         """
         执行修正算法
 
@@ -163,6 +160,7 @@ class TrackCorrectionAlgorithm(ABC):
 # 具体算法实现
 # ============================================================================
 
+
 class RANSACAlgorithm(TrackCorrectionAlgorithm):
     """RANSAC 多源修正算法"""
 
@@ -171,7 +169,7 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
         residual_threshold: float = 0.5,
         min_samples: int = 2,
         time_window: float = PreprocessingConfig.TIME_WINDOW_MATCH,
-        position_threshold: float = PreprocessingConfig.POSITION_THRESHOLD
+        position_threshold: float = PreprocessingConfig.POSITION_THRESHOLD,
     ):
         self.residual_threshold = residual_threshold
         self.min_samples = min_samples
@@ -183,17 +181,21 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
 
     def get_parameters(self) -> Dict:
         return {
-            'residual_threshold': self.residual_threshold,
-            'min_samples': self.min_samples,
-            'time_window': self.time_window,
-            'position_threshold': self.position_threshold,
+            "residual_threshold": self.residual_threshold,
+            "min_samples": self.min_samples,
+            "time_window": self.time_window,
+            "position_threshold": self.position_threshold,
         }
 
     def set_parameters(self, params: Dict):
-        self.residual_threshold = params.get('residual_threshold', self.residual_threshold)
-        self.min_samples = params.get('min_samples', self.min_samples)
-        self.time_window = params.get('time_window', self.time_window)
-        self.position_threshold = params.get('position_threshold', self.position_threshold)
+        self.residual_threshold = params.get(
+            "residual_threshold", self.residual_threshold
+        )
+        self.min_samples = params.get("min_samples", self.min_samples)
+        self.time_window = params.get("time_window", self.time_window)
+        self.position_threshold = params.get(
+            "position_threshold", self.position_threshold
+        )
 
     def correct(self, observations: List[Dict]) -> Dict:
         """
@@ -221,19 +223,19 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
             else:
                 # 应用 RANSAC
                 result = self._apply_ransac(group_obs)
-                corrected_observations.extend(result['observations'])
-                confidence_scores.extend(result['confidences'])
-                outlier_flags.extend(result['outliers'])
+                corrected_observations.extend(result["observations"])
+                confidence_scores.extend(result["confidences"])
+                outlier_flags.extend(result["outliers"])
 
         return {
-            'corrected_observations': corrected_observations,
-            'confidence_scores': confidence_scores,
-            'outlier_flags': outlier_flags,
-            'metadata': {
-                'algorithm': self.get_name(),
-                'parameters': self.get_parameters(),
-                'time_groups': len(time_groups),
-            }
+            "corrected_observations": corrected_observations,
+            "confidence_scores": confidence_scores,
+            "outlier_flags": outlier_flags,
+            "metadata": {
+                "algorithm": self.get_name(),
+                "parameters": self.get_parameters(),
+                "time_groups": len(time_groups),
+            },
         }
 
     def _group_by_time_window(self, observations: List[Dict]) -> List[List[Dict]]:
@@ -242,13 +244,15 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
             return []
 
         # 按时间排序
-        sorted_obs = sorted(observations, key=lambda o: o['timestamp'])
+        sorted_obs = sorted(observations, key=lambda o: o["timestamp"])
 
         groups = []
         current_group = [sorted_obs[0]]
 
         for obs in sorted_obs[1:]:
-            time_diff = (obs['timestamp'] - current_group[0]['timestamp']).total_seconds()
+            time_diff = (
+                obs["timestamp"] - current_group[0]["timestamp"]
+            ).total_seconds()
 
             if time_diff <= self.time_window:
                 current_group.append(obs)
@@ -263,7 +267,9 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
 
     def _apply_ransac(self, observations: List[Dict]) -> Dict:
         """应用 RANSAC 算法"""
-        positions = [(o['latitude'], o['longitude'], o.get('altitude', 0)) for o in observations]
+        positions = [
+            (o["latitude"], o["longitude"], o.get("altitude", 0)) for o in observations
+        ]
 
         coords = np.array([(p[0], p[1]) for p in positions])
 
@@ -299,12 +305,14 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
 
             for i, obs in enumerate(observations):
                 if corrected_lat is not None:
-                    result_obs.append({
-                        **obs,
-                        'latitude': corrected_lat,
-                        'longitude': corrected_lng,
-                        'altitude': corrected_alt,
-                    })
+                    result_obs.append(
+                        {
+                            **obs,
+                            "latitude": corrected_lat,
+                            "longitude": corrected_lng,
+                            "altitude": corrected_alt,
+                        }
+                    )
                     confidences.append(confidence)
                     outliers.append(0 if inlier_mask[i] else 1)
                 else:
@@ -313,9 +321,9 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
                     outliers.append(0)
 
             return {
-                'observations': result_obs,
-                'confidences': confidences,
-                'outliers': outliers,
+                "observations": result_obs,
+                "confidences": confidences,
+                "outliers": outliers,
             }
 
         except Exception as e:
@@ -323,28 +331,21 @@ class RANSACAlgorithm(TrackCorrectionAlgorithm):
             return self._return_observations(observations, confidence=0.0, error=str(e))
 
     def _return_observations(
-        self,
-        observations: List[Dict],
-        confidence: float = 0.5,
-        error: str = None
+        self, observations: List[Dict], confidence: float = 0.5, error: str = None
     ) -> Dict:
         """返回原始观测数据"""
         return {
-            'observations': observations,
-            'confidences': [confidence] * len(observations),
-            'outliers': [0] * len(observations),
-            'metadata': {'error': error} if error else {},
+            "observations": observations,
+            "confidences": [confidence] * len(observations),
+            "outliers": [0] * len(observations),
+            "metadata": {"error": error} if error else {},
         }
 
 
 class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
     """卡尔曼滤波单源修正算法"""
 
-    def __init__(
-        self,
-        process_noise: float = 0.1,
-        measurement_noise: float = 1.0
-    ):
+    def __init__(self, process_noise: float = 0.1, measurement_noise: float = 1.0):
         self.process_noise = process_noise
         self.measurement_noise = measurement_noise
         self.filters = {}  # 每条轨迹独立的滤波器
@@ -354,13 +355,13 @@ class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
 
     def get_parameters(self) -> Dict:
         return {
-            'process_noise': self.process_noise,
-            'measurement_noise': self.measurement_noise,
+            "process_noise": self.process_noise,
+            "measurement_noise": self.measurement_noise,
         }
 
     def set_parameters(self, params: Dict):
-        self.process_noise = params.get('process_noise', self.process_noise)
-        self.measurement_noise = params.get('measurement_noise', self.measurement_noise)
+        self.process_noise = params.get("process_noise", self.process_noise)
+        self.measurement_noise = params.get("measurement_noise", self.measurement_noise)
 
     def correct(self, observations: List[Dict]) -> Dict:
         """
@@ -370,16 +371,16 @@ class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
         """
         if not observations:
             return {
-                'corrected_observations': [],
-                'confidence_scores': [],
-                'outlier_flags': [],
-                'metadata': {'algorithm': self.get_name()},
+                "corrected_observations": [],
+                "confidence_scores": [],
+                "outlier_flags": [],
+                "metadata": {"algorithm": self.get_name()},
             }
 
         # 按轨迹ID分组
         track_groups = {}
         for obs in observations:
-            track_id = obs.get('track_id', 'unknown')
+            track_id = obs.get("track_id", "unknown")
             if track_id not in track_groups:
                 track_groups[track_id] = []
             track_groups[track_id].append(obs)
@@ -390,7 +391,7 @@ class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
 
         for track_id, track_obs in track_groups.items():
             # 按时间排序
-            track_obs = sorted(track_obs, key=lambda o: o['timestamp'])
+            track_obs = sorted(track_obs, key=lambda o: o["timestamp"])
 
             # 获取或创建滤波器
             if track_id not in self.filters:
@@ -400,27 +401,35 @@ class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
 
             for obs in track_obs:
                 # 应用滤波
-                measurement = (obs['latitude'], obs['longitude'], obs.get('altitude', 0))
-                corrected_lat, corrected_lng, corrected_alt, confidence = self._filter_step(kf, measurement)
+                measurement = (
+                    obs["latitude"],
+                    obs["longitude"],
+                    obs.get("altitude", 0),
+                )
+                corrected_lat, corrected_lng, corrected_alt, confidence = (
+                    self._filter_step(kf, measurement)
+                )
 
-                corrected_observations.append({
-                    **obs,
-                    'latitude': corrected_lat,
-                    'longitude': corrected_lng,
-                    'altitude': corrected_alt,
-                })
+                corrected_observations.append(
+                    {
+                        **obs,
+                        "latitude": corrected_lat,
+                        "longitude": corrected_lng,
+                        "altitude": corrected_alt,
+                    }
+                )
                 confidence_scores.append(confidence)
                 outlier_flags.append(0)
 
         return {
-            'corrected_observations': corrected_observations,
-            'confidence_scores': confidence_scores,
-            'outlier_flags': outlier_flags,
-            'metadata': {
-                'algorithm': self.get_name(),
-                'parameters': self.get_parameters(),
-                'tracks_processed': len(track_groups),
-            }
+            "corrected_observations": corrected_observations,
+            "confidence_scores": confidence_scores,
+            "outlier_flags": outlier_flags,
+            "metadata": {
+                "algorithm": self.get_name(),
+                "parameters": self.get_parameters(),
+                "tracks_processed": len(track_groups),
+            },
         }
 
     def _create_filter(self):
@@ -429,21 +438,25 @@ class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
 
         # 状态转移矩阵 (匀速模型)
         dt = 1.0
-        kf.F = np.array([
-            [1, 0, 0, dt, 0, 0],
-            [0, 1, 0, 0, dt, 0],
-            [0, 0, 1, 0, 0, dt],
-            [0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 1],
-        ])
+        kf.F = np.array(
+            [
+                [1, 0, 0, dt, 0, 0],
+                [0, 1, 0, 0, dt, 0],
+                [0, 0, 1, 0, 0, dt],
+                [0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 1],
+            ]
+        )
 
         # 测量矩阵
-        kf.H = np.array([
-            [1, 0, 0, 0, 0, 0],
-            [0, 1, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0],
-        ])
+        kf.H = np.array(
+            [
+                [1, 0, 0, 0, 0, 0],
+                [0, 1, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, 0],
+            ]
+        )
 
         # 噪声协方差
         kf.Q = np.eye(6) * self.process_noise
@@ -452,16 +465,14 @@ class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
         return kf
 
     def _filter_step(
-        self,
-        kf: KalmanFilter,
-        measurement: Tuple[float, float, float]
+        self, kf: KalmanFilter, measurement: Tuple[float, float, float]
     ) -> Tuple[float, float, float, float]:
         """单步滤波"""
-        if not hasattr(kf, 'initialized') or not kf.initialized:
+        if not hasattr(kf, "initialized") or not kf.initialized:
             # 初始化
-            initial_state = np.array([
-                measurement[0], measurement[1], measurement[2], 0, 0, 0
-            ])
+            initial_state = np.array(
+                [measurement[0], measurement[1], measurement[2], 0, 0, 0]
+            )
             kf.x = initial_state.reshape(6, 1)
             kf.P = np.eye(6) * 100
             kf.initialized = True
@@ -485,19 +496,18 @@ class KalmanFilterAlgorithm(TrackCorrectionAlgorithm):
 # 算法工厂
 # ============================================================================
 
+
 class AlgorithmFactory:
     """算法工厂，用于创建和获取算法实例"""
 
     _algorithms = {
-        'ransac': RANSACAlgorithm,
-        'kalman': KalmanFilterAlgorithm,
+        "ransac": RANSACAlgorithm,
+        "kalman": KalmanFilterAlgorithm,
     }
 
     @classmethod
     def create_algorithm(
-        cls,
-        algorithm_name: str,
-        **params
+        cls, algorithm_name: str, **params
     ) -> TrackCorrectionAlgorithm:
         """创建算法实例"""
         if algorithm_name.lower() not in cls._algorithms:
@@ -521,16 +531,14 @@ class AlgorithmFactory:
 # 预处理管道
 # ============================================================================
 
+
 class TrackPreprocessor:
     """轨迹预处理管道"""
 
     def __init__(self, config: PreprocessingConfig = None):
         self.config = config or PreprocessingConfig()
 
-    def preprocess_raw_data(
-        self,
-        raw_tracks: List[FlightTrackRaw]
-    ) -> List[Dict]:
+    def preprocess_raw_data(self, raw_tracks: List[FlightTrackRaw]) -> List[Dict]:
         """
         预处理原始轨迹数据
 
@@ -540,6 +548,7 @@ class TrackPreprocessor:
         """
         # 按站号+批号分组
         from collections import defaultdict
+
         groups = defaultdict(list)
 
         for track in raw_tracks:
@@ -558,14 +567,14 @@ class TrackPreprocessor:
             for i in range(1, len(tracks)):
                 # 计算与前一个点的速度
                 point1 = {
-                    'latitude': tracks[i-1].latitude,
-                    'longitude': tracks[i-1].longitude,
-                    'timestamp': tracks[i-1].timestamp,
+                    "latitude": tracks[i - 1].latitude,
+                    "longitude": tracks[i - 1].longitude,
+                    "timestamp": tracks[i - 1].timestamp,
                 }
                 point2 = {
-                    'latitude': tracks[i].latitude,
-                    'longitude': tracks[i].longitude,
-                    'timestamp': tracks[i].timestamp,
+                    "latitude": tracks[i].latitude,
+                    "longitude": tracks[i].longitude,
+                    "timestamp": tracks[i].timestamp,
                 }
 
                 _, speed_kmh, _ = calculate_velocity(point1, point2)
@@ -578,22 +587,23 @@ class TrackPreprocessor:
             for idx in valid_indices:
                 track = tracks[idx]
 
-                processed_data.append({
-                    'raw_track_id': track.id,
-                    'track_id': track.batch_id,
-                    'timestamp': track.timestamp,
-                    'latitude': track.latitude,
-                    'longitude': track.longitude,
-                    'altitude': track.altitude or 0,
-                    'radar_station_id': track.radar_station_id,
-                    'raw_data': {},
-                })
+                processed_data.append(
+                    {
+                        "raw_track_id": track.id,
+                        "track_id": track.batch_id,
+                        "timestamp": track.timestamp,
+                        "latitude": track.latitude,
+                        "longitude": track.longitude,
+                        "altitude": track.altitude or 0,
+                        "radar_station_id": track.radar_station_id,
+                        "raw_data": {},
+                    }
+                )
 
         return processed_data
 
     def group_simultaneous_observations(
-        self,
-        observations: List[Dict]
+        self, observations: List[Dict]
     ) -> List[List[Dict]]:
         """
         分组同时观测
@@ -607,7 +617,7 @@ class TrackPreprocessor:
             return []
 
         # 按时间排序
-        sorted_obs = sorted(observations, key=lambda o: o['timestamp'])
+        sorted_obs = sorted(observations, key=lambda o: o["timestamp"])
 
         groups = []
         processed = set()
@@ -625,18 +635,22 @@ class TrackPreprocessor:
                     continue
 
                 # 不同雷达站
-                if obs_a['radar_station_id'] == obs_b['radar_station_id']:
+                if obs_a["radar_station_id"] == obs_b["radar_station_id"]:
                     continue
 
                 # 检查时间差
-                time_diff = abs((obs_b['timestamp'] - obs_a['timestamp']).total_seconds())
+                time_diff = abs(
+                    (obs_b["timestamp"] - obs_a["timestamp"]).total_seconds()
+                )
                 if time_diff > self.config.TIME_WINDOW_MATCH:
                     continue
 
                 # 检查位置距离
                 distance = haversine_distance(
-                    obs_a['latitude'], obs_a['longitude'],
-                    obs_b['latitude'], obs_b['longitude']
+                    obs_a["latitude"],
+                    obs_a["longitude"],
+                    obs_b["latitude"],
+                    obs_b["longitude"],
                 )
                 distance_deg = distance / 111000  # 转换为度（粗略）
 
@@ -657,6 +671,7 @@ class TrackPreprocessor:
 # 主处理函数
 # ============================================================================
 
+
 def process_tracks(request: TrackProcessRequest, db: Session) -> TrackProcessResponse:
     """
     处理轨迹数据的主入口
@@ -668,9 +683,12 @@ def process_tracks(request: TrackProcessRequest, db: Session) -> TrackProcessRes
     4. 保存结果
     """
     # 获取原始数据
-    raw_tracks = db.query(FlightTrackRaw).filter(
-        FlightTrackRaw.file_id == request.file_id
-    ).order_by(FlightTrackRaw.timestamp).all()
+    raw_tracks = (
+        db.query(FlightTrackRaw)
+        .filter(FlightTrackRaw.file_id == request.file_id)
+        .order_by(FlightTrackRaw.timestamp)
+        .all()
+    )
 
     if not raw_tracks:
         raise ValueError("没有找到可处理的轨迹数据")
@@ -686,15 +704,15 @@ def process_tracks(request: TrackProcessRequest, db: Session) -> TrackProcessRes
     algorithm_name = request.mode.lower()
     algorithm_params = {}
 
-    if algorithm_name == 'multi_source':
+    if algorithm_name == "multi_source":
         algorithm_params = {
-            'residual_threshold': request.ransac_threshold or 0.5,
-            'min_samples': 2,
+            "residual_threshold": request.ransac_threshold or 0.5,
+            "min_samples": 2,
         }
-    elif algorithm_name == 'single_source':
+    elif algorithm_name == "single_source":
         algorithm_params = {
-            'process_noise': request.kalman_process_noise or 0.1,
-            'measurement_noise': request.kalman_measurement_noise or 1.0,
+            "process_noise": request.kalman_process_noise or 0.1,
+            "measurement_noise": request.kalman_measurement_noise or 1.0,
         }
     else:
         raise ValueError(f"不支持的处理模式: {request.mode}")
@@ -708,26 +726,28 @@ def process_tracks(request: TrackProcessRequest, db: Session) -> TrackProcessRes
     corrected_count = 0
     outlier_count = 0
 
-    for i, obs in enumerate(result['corrected_observations']):
+    for i, obs in enumerate(result["corrected_observations"]):
         corrected = FlightTrackCorrected(
-            raw_track_id=obs['raw_track_id'],
-            batch_id=obs['track_id'],
-            timestamp=obs['timestamp'],
-            latitude=obs['latitude'],
-            longitude=obs['longitude'],
-            altitude=obs['altitude'],
+            raw_track_id=obs["raw_track_id"],
+            batch_id=obs["track_id"],
+            timestamp=obs["timestamp"],
+            latitude=obs["latitude"],
+            longitude=obs["longitude"],
+            altitude=obs["altitude"],
             correction_method=algorithm.get_name(),
-            confidence_score=result['confidence_scores'][i],
-            is_outlier=result['outlier_flags'][i],
-            correction_metadata=json.dumps({
-                'algorithm': algorithm.get_name(),
-                'parameters': algorithm.get_parameters(),
-                'raw_data': obs['raw_data'],
-            }),
+            confidence_score=result["confidence_scores"][i],
+            is_outlier=result["outlier_flags"][i],
+            correction_metadata=json.dumps(
+                {
+                    "algorithm": algorithm.get_name(),
+                    "parameters": algorithm.get_parameters(),
+                    "raw_data": obs["raw_data"],
+                }
+            ),
         )
         db.add(corrected)
         corrected_count += 1
-        outlier_count += result['outlier_flags'][i]
+        outlier_count += result["outlier_flags"][i]
 
     db.commit()
 
@@ -744,6 +764,7 @@ def process_tracks(request: TrackProcessRequest, db: Session) -> TrackProcessRes
 # ============================================================================
 # 查询函数
 # ============================================================================
+
 
 def get_raw_tracks(
     db: Session,
