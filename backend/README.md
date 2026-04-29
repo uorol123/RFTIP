@@ -98,59 +98,30 @@ backend/
 
 ## 快速开始
 
-> **推荐方式：使用 Docker 部署依赖服务**
-> 项目依赖 MySQL、Redis、MinIO 等服务，建议使用 Docker 快速搭建环境，详见下方各服务的 Docker 部署命令。
+> **规划中：** 后端依赖服务（MySQL、Redis、MinIO）将通过 Docker Compose 一键部署，目前需手动启动各服务。
 
 ---
 
-### 一、依赖服务部署
+### 一、依赖服务部署（手动）
 
-#### 1. MySQL 数据库
-
-**方式 A：Docker 部署（推荐）**
+项目依赖 MySQL、Redis、MinIO 三个服务，需分别启动：
 
 ```bash
-# 启动 MySQL 容器
-docker run -d --name mysql \
-  -p 3306:3306 \
+# MySQL
+docker run -d --name mysql -p 3306:3306 \
   -e MYSQL_ROOT_PASSWORD=yourpassword \
   -e MYSQL_DATABASE=rftip \
   mysql:8.0
-```
 
-**方式 B：本地安装**
-
-下载并安装 [MySQL 8.0+](https://dev.mysql.com/downloads/mysql/)，然后创建数据库：
-
-```sql
-CREATE DATABASE rftip CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-#### 2. Redis 缓存
-
-**Docker 部署（推荐）**
-
-```bash
+# Redis
 docker run -d --name redis -p 6379:6379 redis
-```
 
-详细说明见：[Docker 部署指南 - Redis](./docs/docker-deploy-guide.md#redis-缓存数据库)
-
-#### 3. MinIO 对象存储
-
-**Docker 部署（推荐）**
-
-```bash
-docker run -d --name minio \
-  -p 9000:9000 -p 9001:9001 \
+# MinIO
+docker run -d --name minio -p 9000:9000 -p 9001:9001 \
   -e MINIO_ROOT_USER=minioadmin \
   -e MINIO_ROOT_PASSWORD=minioadmin \
   minio/minio server /data --console-address ":9001"
 ```
-
-访问控制台：http://localhost:9001
-
-详细说明见：[Docker 部署指南 - MinIO](./docs/docker-deploy-guide.md#minio-对象存储)
 
 ---
 
@@ -264,67 +235,40 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 
 ## 数据库设计
 
-### 核心数据表
+### 用户与文件
 
 | 表名 | 说明 |
 | --- | --- |
 | users | 用户信息表 |
 | user_login_logs | 用户登录日志表 |
-| data_files | 数据文件表 |
+| data_files | 上传文件表（MinIO 存储） |
+
+### 轨迹数据
+
+| 表名 | 说明 |
+| --- | --- |
 | flight_tracks_raw | 原始飞行轨迹表 |
 | flight_tracks_corrected | 修正后飞行轨迹表 |
 | radar_stations | 雷达站信息表 |
+
+### 误差分析
+
+| 表名 | 说明 |
+| --- | --- |
+| error_analysis_tasks | 误差分析任务表 |
+| track_segments | 轨迹段表 |
+| match_groups | 匹配组表 |
+| error_results | 误差结果表 |
+| track_interpolated_points | 轨迹插值点表 |
+| smoothed_trajectory_results | 平滑轨迹结果表 |
+
+### 禁飞区
+
+| 表名 | 说明 |
+| --- | --- |
 | restricted_zones | 用户自定义禁飞区表 |
 | zone_intrusions | 禁飞区入侵记录表 |
 
-完整 SQL 建表语句请参考[主项目 README](../README.md#3-数据库设计)
-
----
-
-## API 接口文档（规划）
-
-### 用户认证
-
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `/api/auth/register` | POST | 用户注册 |
-| `/api/auth/login` | POST | 用户登录 |
-| `/api/auth/profile` | GET | 获取用户信息 |
-
-### 文件管理
-
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `/api/files/upload` | POST | 上传数据文件 |
-| `/api/files/list` | GET | 获取文件列表 |
-| `/api/files/{file_id}` | GET | 获取文件详情 |
-| `/api/files/{file_id}` | DELETE | 删除文件 |
-
-### 轨迹处理
-
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `/api/tracks/process` | POST | 处理轨迹数据 |
-| `/api/tracks/raw` | GET | 获取原始轨迹 |
-| `/api/tracks/corrected` | GET | 获取修正轨迹 |
-
-### AI 分析
-
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `/api/analysis/trajectory` | POST | 整体轨迹分析 |
-| `/api/analysis/segment` | POST | 区间轨迹分析 |
-
-### 禁飞区管理
-
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `/api/zones` | POST | 创建禁飞区 |
-| `/api/zones` | GET | 获取禁飞区列表 |
-| `/api/zones/{zone_id}` | DELETE | 删除禁飞区 |
-| `/api/zones/intrusions` | GET | 获取入侵记录 |
-
----
 
 ## 核心算法说明
 
