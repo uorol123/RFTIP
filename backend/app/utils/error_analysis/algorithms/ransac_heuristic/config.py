@@ -1,11 +1,13 @@
 """
-加权最小二乘融合算法配置模型
+启发式 RANSAC 算法配置模型
+
+通过启发式方法（偏差排序 + 差值突变检测）识别故障雷达站
 """
 from typing import List, Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field
 
 
-class WeightedLstsqCostWeights(BaseModel):
+class RansacHeuristicCostWeights(BaseModel):
     """代价函数权重配置"""
     variance: float = Field(default=100.0, description="方差权重")
     azimuth_error_square: float = Field(default=0.15, description="方位角误差平方项权重（度^2）")
@@ -13,12 +15,15 @@ class WeightedLstsqCostWeights(BaseModel):
     elevation_error_square: float = Field(default=0.1, description="俯仰角误差平方项权重（度^2）")
 
 
-class WeightedLstsqAlgorithmConfig(BaseModel):
+class RansacHeuristicAlgorithmConfig(BaseModel):
     """
-    加权最小二乘融合算法配置
+    启发式 RANSAC 算法配置
 
-    用于多源参考模式，综合多雷达观测数据，
-    根据各站可靠性权重进行融合，输出最优估计轨迹和各站系统误差。
+    通过启发式方法识别故障雷达站：
+    1. 计算每个匹配组的几何中心
+    2. 计算每个站与中心的偏差
+    3. 按偏差排序，检测差值突变点
+    4. 突变点之前是健康站，之后是故障站
     """
 
     # ========== 数据处理配置 ==========
@@ -30,14 +35,18 @@ class WeightedLstsqAlgorithmConfig(BaseModel):
     # ========== 航迹提取配置 ==========
     min_track_points: int = Field(default=10, ge=3, le=100, description="最小航迹点数")
 
-    # ========== 融合参数 ==========
-    weighting_method: str = Field(
-        default="inverse_variance",
-        description="权重计算方法: inverse_variance（反方差）、uniform（均匀）、match_count（按匹配数）"
+    # ========== 启发式 RANSAC 参数 ==========
+    jump_threshold: float = Field(
+        default=0.01, ge=0.001, le=1.0,
+        description="差值突变阈值（度），用于检测健康站和故障站的边界"
     )
-    outlier_removal: bool = Field(
-        default=True,
-        description="是否在融合前移除离群观测（基于 3-sigma 准则）"
+    min_healthy_stations: int = Field(
+        default=2, ge=2, le=10,
+        description="最少健康站数量，即使差值突变不明显也保留至少这么多健康站"
+    )
+    outlier_ratio_threshold: float = Field(
+        default=0.5, ge=0.1, le=0.9,
+        description="离群率阈值，某雷达站被判定为故障的离群比例"
     )
 
     # ========== 优化参数 ==========
@@ -52,17 +61,9 @@ class WeightedLstsqAlgorithmConfig(BaseModel):
     max_match_groups: int = Field(default=15000, ge=1000, le=100000, description="最大匹配组数")
 
     # ========== 代价函数权重 ==========
-    cost_weights: Optional[WeightedLstsqCostWeights] = Field(
+    cost_weights: Optional[RansacHeuristicCostWeights] = Field(
         default=None, description="代价函数权重"
     )
-
-    @model_validator(mode='before')
-    @classmethod
-    def validate_cost_weights(cls, values):
-        """允许 cost_weights 为 null"""
-        if isinstance(values, dict) and values.get('cost_weights') is None:
-            values['cost_weights'] = None
-        return values
 
     class Config:
         use_enum_values = True
@@ -72,14 +73,9 @@ class WeightedLstsqAlgorithmConfig(BaseModel):
                 "grid_resolution": 0.2,
                 "time_window": 60,
                 "match_distance_threshold": 0.12,
-                "weighting_method": "inverse_variance",
-                "outlier_removal": True,
+                "jump_threshold": 0.01,
+                "min_healthy_stations": 2,
+                "outlier_ratio_threshold": 0.5,
                 "optimization_steps": [0.1, 0.01],
-                "cost_weights": {
-                    "variance": 100.0,
-                    "azimuth_error_square": 0.15,
-                    "range_error_square": 6e-7,
-                    "elevation_error_square": 0.1,
-                }
             }
         }

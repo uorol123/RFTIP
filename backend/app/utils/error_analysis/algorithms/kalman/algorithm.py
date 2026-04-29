@@ -54,13 +54,13 @@ class KalmanAlgorithm(BaseErrorAnalysisAlgorithm):
 
     def analyze(
         self,
+        task_id: str,
         radar_station_ids: List[int],
         track_ids: List[str],
         db_session: Session,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> AnalysisResult:
         start_time = datetime.now()
-        task_id = f"{self.ALGORITHM_NAME}_{int(start_time.timestamp())}"
 
         result = AnalysisResult(
             task_id=task_id,

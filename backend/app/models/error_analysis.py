@@ -61,6 +61,7 @@ class ErrorAnalysisTask(Base):
     track_segments = relationship("TrackSegment", back_populates="task", cascade="all, delete-orphan")
     match_groups = relationship("MatchGroup", back_populates="task", cascade="all, delete-orphan")
     error_results = relationship("ErrorResult", back_populates="task", cascade="all, delete-orphan")
+    smoothed_trajectories = relationship("SmoothedTrajectoryResult", back_populates="task", cascade="all, delete-orphan")
 
     def set_config(self, config_dict: dict):
         """设置配置参数"""
@@ -201,4 +202,43 @@ class TrackInterpolatedPoint(Base):
         Index("idx_station_track", "station_id", "track_id"),
         Index("idx_time", "time_seconds"),
         {"comment": "插值点表"}
+    )
+
+
+class SmoothedTrajectoryResult(Base):
+    """平滑轨迹结果表（单源盲测算法专用）"""
+    __tablename__ = "smoothed_trajectory_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
+    task_id = Column(String(36), ForeignKey("error_analysis_tasks.task_id"), nullable=False, comment="关联任务ID")
+
+    # 雷达站和轨迹信息
+    station_id = Column(Integer, nullable=False, comment="雷达站号")
+    batch_id = Column(String(50), nullable=False, comment="轨迹批号")
+
+    # 原始轨迹数据（JSON格式存储）
+    original_trajectory = Column(JSON, nullable=False, comment="原始轨迹点列表")
+
+    # 平滑后轨迹数据（JSON格式存储）
+    smoothed_trajectory = Column(JSON, nullable=False, comment="平滑后轨迹点列表")
+
+    # 统计信息
+    rmse_lat = Column(Float, nullable=True, comment="纬度RMSE（米）")
+    rmse_lon = Column(Float, nullable=True, comment="经度RMSE（米）")
+    rmse_alt = Column(Float, nullable=True, comment="高度RMSE（米）")
+    point_count = Column(Integer, nullable=False, comment="轨迹点数")
+
+    # 配置参数
+    process_noise = Column(Float, nullable=True, comment="过程噪声")
+    measurement_noise = Column(Float, nullable=True, comment="观测噪声")
+
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+
+    # 关系
+    task = relationship("ErrorAnalysisTask")
+
+    __table_args__ = (
+        Index("idx_smooth_task_id", "task_id"),
+        Index("idx_smooth_station_batch", "station_id", "batch_id"),
+        {"comment": "平滑轨迹结果表"}
     )

@@ -81,9 +81,12 @@
 
       <!-- 算法流程说明 -->
       <section class="process-section">
-        <h2>基于梯度下降的迭代寻优算法</h2>
-        <p class="section-desc">
+        <h2>{{ algorithmDisplayName }}</h2>
+        <p class="section-desc" v-if="!isSingleSourceMode">
           该算法通过对比不同雷达站观测同一目标时的位置差异，利用梯度下降法迭代优化，计算各雷达站的系统误差（方位角、距离、俯仰角）。
+        </p>
+        <p class="section-desc" v-else>
+          该算法基于匀速运动模型对单站雷达轨迹进行平滑去噪，通过卡尔曼滤波输出修正后的轨迹和状态估计协方差，评估轨迹质量。
         </p>
 
         <!-- 水平时间线步骤导航 -->
@@ -251,35 +254,93 @@
           </button>
         </div>
 
-        <!-- 航迹段详情 -->
-        <div v-if="activeTab === 'segments'" class="tab-content">
-          <SegmentDetailView
-            :segments="store.taskDetail.segments"
-            :summary="store.taskDetail.segments_summary"
+        <!-- 单源盲测模式: 平滑轨迹对比 -->
+        <div v-if="isSingleSourceMode && activeTab === 'smoothed'" class="tab-content">
+          <SmoothedTrajectoryView
+            :trajectories="store.taskDetail.smoothed_trajectories"
           />
         </div>
 
-        <!-- 插值数据 -->
-        <div v-if="activeTab === 'interpolation'" class="tab-content">
-          <InterpolationView
-            :summary="store.taskDetail.interpolation_summary"
-          />
+        <!-- 单源盲测模式: 统计信息 -->
+        <div v-if="isSingleSourceMode && activeTab === 'statistics'" class="tab-content">
+          <div class="statistics-panel">
+            <h4>处理统计</h4>
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-label">处理时间</span>
+                <span class="stat-value">{{ store.taskDetail.processing_time_seconds.toFixed(2) }} 秒</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">轨迹数量</span>
+                <span class="stat-value">{{ store.taskDetail.track_ids.length }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">平滑轨迹组</span>
+                <span class="stat-value">{{ store.taskDetail.smoothed_trajectories.length }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">总轨迹点数</span>
+                <span class="stat-value">{{ store.taskDetail.smoothed_trajectories.reduce((sum, t) => sum + t.point_count, 0) }}</span>
+              </div>
+            </div>
+
+            <!-- 误差统计 -->
+            <h4>误差统计 (RMSE)</h4>
+            <div class="stats-grid" v-if="store.taskDetail.smoothed_trajectories.length > 0">
+              <div class="stat-item">
+                <span class="stat-label">平均纬度偏差</span>
+                <span class="stat-value">
+                  {{ (store.taskDetail.smoothed_trajectories.reduce((sum, t) => sum + (t.rmse_lat || 0), 0) / store.taskDetail.smoothed_trajectories.length * 111000).toFixed(2) }} m
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">平均距离偏差</span>
+                <span class="stat-value">
+                  {{ (store.taskDetail.smoothed_trajectories.reduce((sum, t) => sum + (t.rmse_lon || 0), 0) / store.taskDetail.smoothed_trajectories.length * 111000).toFixed(2) }} m
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">平均高度偏差</span>
+                <span class="stat-value">
+                  {{ (store.taskDetail.smoothed_trajectories.reduce((sum, t) => sum + (t.rmse_alt || 0), 0) / store.taskDetail.smoothed_trajectories.length).toFixed(2) }} m
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- 匹配组 -->
-        <div v-if="activeTab === 'matches'" class="tab-content">
-          <MatchGroupDetailView
-            :groups="store.taskDetail.match_groups"
-            :summary="store.taskDetail.match_summary"
-          />
-        </div>
+        <!-- 多源参考模式 -->
+        <template v-if="!isSingleSourceMode">
+          <!-- 航迹段详情 -->
+          <div v-if="activeTab === 'segments'" class="tab-content">
+            <SegmentDetailView
+              :segments="store.taskDetail.segments"
+              :summary="store.taskDetail.segments_summary"
+            />
+          </div>
 
-        <!-- 误差结果 -->
-        <div v-if="activeTab === 'errors'" class="tab-content">
-          <ErrorResultDetailView
-            :results="store.taskDetail.error_results"
-          />
-        </div>
+          <!-- 插值数据 -->
+          <div v-if="activeTab === 'interpolation'" class="tab-content">
+            <InterpolationView
+              :summary="store.taskDetail.interpolation_summary"
+            />
+          </div>
+
+          <!-- 匹配组 -->
+          <div v-if="activeTab === 'matches'" class="tab-content">
+            <MatchGroupDetailView
+              :groups="store.taskDetail.match_groups"
+              :summary="store.taskDetail.match_summary"
+            />
+          </div>
+
+          <!-- 误差结果 -->
+          <div v-if="activeTab === 'errors'" class="tab-content">
+            <ErrorResultDetailView
+              :results="store.taskDetail.error_results"
+            />
+          </div>
+        </template>
       </section>
     </div>
   </div>
@@ -295,6 +356,7 @@ import SegmentDetailView from '@/components/errorAnalysis/SegmentDetailView.vue'
 import InterpolationView from '@/components/errorAnalysis/InterpolationView.vue'
 import MatchGroupDetailView from '@/components/errorAnalysis/MatchGroupDetailView.vue'
 import ErrorResultDetailView from '@/components/errorAnalysis/ErrorResultDetailView.vue'
+import SmoothedTrajectoryView from '@/components/errorAnalysis/SmoothedTrajectoryView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -306,16 +368,51 @@ const activeStep = ref(-1)
 const expandedStep = ref(-1)
 const error = ref<string | null>(null)
 
-const tabs = [
+// 单源盲测算法列表
+const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline']
+
+// 判断是否为单源盲测模式
+const isSingleSourceMode = computed(() => {
+  const algorithmName = store.taskDetail?.algorithm_name || ''
+  return SINGLE_SOURCE_ALGORITHMS.includes(algorithmName)
+})
+
+// 多源模式标签页
+const multiSourceTabs = [
   { key: 'segments', label: '航迹段详情' },
   { key: 'interpolation', label: '插值数据' },
   { key: 'matches', label: '匹配组' },
   { key: 'errors', label: '误差结果' },
 ]
 
+// 单源模式标签页
+const singleSourceTabs = [
+  { key: 'smoothed', label: '平滑轨迹对比' },
+  { key: 'statistics', label: '统计信息' },
+]
+
+// 根据模式获取标签页
+const tabs = computed(() => {
+  return isSingleSourceMode.value ? singleSourceTabs.value : multiSourceTabs
+})
+
 const statusInfo = computed(() => {
   const status = store.taskDetail?.status || 'pending'
   return TASK_STATUS_INFO[status] || { label: status, color: '#9ca3af' }
+})
+
+// 获取算法显示名称
+const algorithmDisplayName = computed(() => {
+  const name = store.taskDetail?.algorithm_name || 'gradient_descent'
+  const names: Record<string, string> = {
+    gradient_descent: '基于梯度下降的迭代寻优算法',
+    ransac: 'RANSAC 随机抽样一致性算法',
+    weighted_lstsq: '加权最小二乘算法',
+    kalman: '卡尔曼滤波算法',
+    particle_filter: '粒子滤波算法',
+    spline: '样条插值算法',
+  }
+  return names[name] || name
 })
 
 function formatTime(timeString: string): string {
@@ -343,6 +440,7 @@ function stepStatusLabel(status: string): string {
 }
 
 function getStepData(stepIndex: number): Record<string, unknown> {
+  if (!store.taskDetail) return {}
   const step = store.taskDetail.process_steps[stepIndex]
   if (!step) return {}
 
@@ -950,5 +1048,52 @@ onMounted(() => {
 
 .tab-content {
   min-height: 300px;
+}
+
+/* 统计面板 */
+.statistics-panel {
+  padding: 1.5rem;
+  background: var(--bg-primary);
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.statistics-panel h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.statistics-panel h4:not(:first-child) {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 0.375rem;
+}
+
+.stat-item .stat-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.stat-item .stat-value {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 </style>

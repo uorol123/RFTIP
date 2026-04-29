@@ -3,7 +3,7 @@
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from enum import Enum
 
 
@@ -37,8 +37,16 @@ class ErrorAnalysisConfig(BaseModel):
         default=[1000, 800, 500, 200, 100, 50, 20],
         description="距离优化步长序列（米）"
     )
-    cost_weights: CostWeights = Field(default_factory=CostWeights, description="代价函数权重")
+    cost_weights: Optional[CostWeights] = Field(default=None, description="代价函数权重")
     max_match_groups: int = Field(default=15000, ge=1000, le=100000, description="最大匹配组数")
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_cost_weights(cls, values):
+        """允许 cost_weights 为 null"""
+        if isinstance(values, dict) and values.get('cost_weights') is None:
+            values['cost_weights'] = None
+        return values
 
     @field_validator('optimization_steps')
     @classmethod
@@ -284,6 +292,34 @@ class InterpolationSummary(BaseModel):
         from_attributes = True
 
 
+class SmoothedTrajectoryPoint(BaseModel):
+    """平滑轨迹点"""
+    timestamp: Optional[datetime] = None
+    longitude: float
+    latitude: float
+    altitude: Optional[float] = None
+    covariance_trace: Optional[float] = None
+
+
+class SmoothedTrajectoryResponse(BaseModel):
+    """平滑轨迹结果响应"""
+    id: int
+    station_id: int
+    station_name: str = ""
+    batch_id: str
+    original_trajectory: List[SmoothedTrajectoryPoint] = []
+    smoothed_trajectory: List[SmoothedTrajectoryPoint] = []
+    rmse_lat: Optional[float] = None
+    rmse_lon: Optional[float] = None
+    rmse_alt: Optional[float] = None
+    point_count: int = 0
+    process_noise: Optional[float] = None
+    measurement_noise: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
 class ProcessStepInfo(BaseModel):
     """流程步骤信息"""
     step_id: str
@@ -308,6 +344,9 @@ class TaskDetailResponse(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
+    # 算法名称
+    algorithm_name: Optional[str] = None
+
     # 配置参数
     config: ErrorAnalysisConfig
     radar_station_ids: List[int] = []
@@ -326,6 +365,7 @@ class TaskDetailResponse(BaseModel):
     interpolated_points: List[InterpolatedPointResponse] = []
     match_groups: List[MatchGroupDetail] = []
     error_results: List[ErrorResultDetail] = []
+    smoothed_trajectories: List[SmoothedTrajectoryResponse] = []
 
     # 统计信息
     processing_time_seconds: float = 0.0
@@ -360,6 +400,8 @@ __all__ = [
     "MatchGroupDetail",
     "ErrorResultDetail",
     "InterpolationSummary",
+    "SmoothedTrajectoryPoint",
+    "SmoothedTrajectoryResponse",
     "ProcessStepInfo",
     "TaskDetailResponse",
 ]

@@ -3,8 +3,8 @@ MRRA 算法配置
 
 使用 Pydantic 定义配置模型，确保类型安全和验证
 """
-from typing import List
-from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class MrraCostWeights(BaseModel):
@@ -40,7 +40,15 @@ class MrraAlgorithmConfig(BaseModel):
     max_match_groups: int = Field(default=15000, ge=1000, le=100000, description="最大匹配组数")
 
     # ========== 代价函数权重 ==========
-    cost_weights: MrraCostWeights = Field(default_factory=MrraCostWeights, description="代价函数权重")
+    cost_weights: Optional[MrraCostWeights] = Field(default=None, description="代价函数权重")
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_cost_weights(cls, values):
+        """允许 cost_weights 为 null"""
+        if isinstance(values, dict) and values.get('cost_weights') is None:
+            values['cost_weights'] = None
+        return values
 
     @field_validator('optimization_steps')
     @classmethod

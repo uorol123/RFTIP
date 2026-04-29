@@ -159,7 +159,7 @@
           </div>
 
           <!-- 代价函数权重 -->
-          <div class="subsection">
+          <div v-if="localConfig.cost_weights" class="subsection">
             <h5 class="subsection-title">代价函数权重</h5>
             <div class="form-row">
               <div class="form-group">

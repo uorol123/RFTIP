@@ -100,6 +100,7 @@ class BaseErrorAnalysisAlgorithm(ABC):
     @abstractmethod
     def analyze(
         self,
+        task_id: str,
         radar_station_ids: List[int],
         track_ids: List[str],
         db_session: Any,
@@ -109,6 +110,7 @@ class BaseErrorAnalysisAlgorithm(ABC):
         执行误差分析
 
         Args:
+            task_id: 任务ID
             radar_station_ids: 雷达站ID列表
             track_ids: 轨迹ID列表
             db_session: 数据库会话

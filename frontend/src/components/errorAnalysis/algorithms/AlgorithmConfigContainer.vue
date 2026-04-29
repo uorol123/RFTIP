@@ -98,8 +98,8 @@ watch(() => store.currentAlgorithmConfig, (newConfig) => {
   localConfig.value = { ...newConfig }
 }, { deep: true, immediate: true })
 
-// 方法
-const loadAlgorithmConfig = async (algorithmName: string) => {
+// 方法 - 函数声明会被提升，所以放在 watch 之前
+async function loadAlgorithmConfig(algorithmName: string) {
   loading.value = true
   error.value = null
 
@@ -131,7 +131,7 @@ const loadAlgorithmConfig = async (algorithmName: string) => {
   }
 }
 
-const resetConfigToDefault = () => {
+function resetConfigToDefault() {
   if (!configSchema.value) return
 
   const config: Record<string, any> = {}

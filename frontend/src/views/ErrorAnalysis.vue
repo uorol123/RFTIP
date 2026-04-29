@@ -274,9 +274,20 @@ async function loadHistoryTask(taskId: string) {
   }
 }
 
+// 单源盲测算法
+const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline']
+
 // 查看任务详情（跳转到详情页）
 function viewTaskDetail(taskId: string) {
-  router.push(`/error-analysis/history/${taskId}`)
+  const task = historyTasks.value.find(t => t.task_id === taskId)
+  const isSingleSource = task?.algorithm_name && SINGLE_SOURCE_ALGORITHMS.includes(task.algorithm_name)
+
+  // 直接跳转，让弹窗在路由变化时自然消失
+  if (isSingleSource) {
+    router.push(`/error-analysis/smoothed/${taskId}`)
+  } else {
+    router.push(`/error-analysis/history/${taskId}`)
+  }
 }
 
 // 格式化时间

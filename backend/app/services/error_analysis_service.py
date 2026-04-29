@@ -14,7 +14,8 @@ from app.models.error_analysis import (
     ErrorAnalysisTaskStatus,
     ErrorResult,
     MatchGroup,
-    TrackSegment
+    TrackSegment,
+    SmoothedTrajectoryResult
 )
 from app.models.flight_track import RadarStation
 from app.schemas.error_analysis import (
@@ -137,7 +138,7 @@ class ErrorAnalysisService:
             logger.info(f"使用算法 {algorithm_name} 执行任务 {task_id}")
 
             # 根据算法类型选择执行方式
-            if algorithm_name in ("ransac", "weighted_lstsq", "kalman", "particle_filter", "spline"):
+            if algorithm_name in ("ransac", "ransac_heuristic", "weighted_lstsq", "kalman", "particle_filter", "spline"):
                 # 新算法使用统一的 analyze() 接口
                 self._execute_with_algorithm_interface(task, algorithm)
             else:
@@ -160,9 +161,13 @@ class ErrorAnalysisService:
             self.db.commit()
             raise
 
+    # 单源盲测算法列表
+    SINGLE_SOURCE_ALGORITHMS = ("kalman", "particle_filter", "spline")
+
     def _execute_with_algorithm_interface(self, task: ErrorAnalysisTask, algorithm) -> None:
         """使用算法框架的 analyze() 接口执行分析"""
         result = algorithm.analyze(
+            task_id=task.task_id,
             radar_station_ids=task.radar_station_ids,
             track_ids=task.track_ids,
             db_session=self.db,
@@ -171,18 +176,16 @@ class ErrorAnalysisService:
         if result.status == "failed":
             raise RuntimeError(result.error_message or "算法执行失败")
 
-        # 保存误差结果
-        for station_id, errors in result.errors.items():
-            error_record = ErrorResult(
-                task_id=task.task_id,
-                station_id=station_id,
-                azimuth_error=errors.get("azimuth_error", 0.0),
-                range_error=errors.get("range_error", 0.0),
-                elevation_error=errors.get("elevation_error", 0.0),
-                match_count=result.match_statistics.get("total_match_groups", 0),
-                confidence=result.match_statistics.get("station_weights", {}).get(str(station_id)),
-            )
-            self.db.add(error_record)
+        # 根据算法类型选择存储方式
+        algorithm_name = task.algorithm_name or ""
+        is_single_source = algorithm_name in self.SINGLE_SOURCE_ALGORITHMS
+
+        if is_single_source:
+            # 单源盲测算法：保存平滑轨迹结果
+            self._save_smoothed_trajectory_results(task.task_id, result, algorithm)
+        else:
+            # 多源参考算法：保存误差结果
+            self._save_error_results_from_result(task.task_id, result)
 
         # 保存结果元数据（融合轨迹、离群率等）
         if result.metadata:
@@ -194,6 +197,77 @@ class ErrorAnalysisService:
             task.result_metadata["match_statistics"] = result.match_statistics
 
         self.db.commit()
+
+    def _save_smoothed_trajectory_results(self, task_id: str, result, algorithm) -> None:
+        """保存单源盲测的平滑轨迹结果"""
+        metadata = result.metadata or {}
+        smoothed_trajectory = metadata.get("smoothed_trajectory", [])
+
+        # 按 (station_id, batch_id) 分组轨迹点
+        from collections import defaultdict
+        trajectories_by_key = defaultdict(list)
+
+        for point in smoothed_trajectory:
+            key = (point.get("station_id"), point.get("batch_id", "unknown"))
+            trajectories_by_key[key].append(point)
+
+        # 获取每站的误差统计
+        errors = result.errors or {}
+
+        for (station_id, batch_id), points in trajectories_by_key.items():
+            # 分离原始点和平滑点
+            original_points = []
+            smoothed_points = []
+
+            for p in points:
+                smoothed_points.append({
+                    "timestamp": p.get("timestamp"),
+                    "longitude": p.get("longitude"),
+                    "latitude": p.get("latitude"),
+                    "altitude": p.get("altitude"),
+                    "covariance_trace": p.get("covariance_trace"),
+                })
+                original_points.append({
+                    "longitude": p.get("orig_lon"),
+                    "latitude": p.get("orig_lat"),
+                    "altitude": p.get("orig_alt"),
+                })
+
+            # 获取该站点的 RMSE
+            station_errors = errors.get(station_id, {})
+            rmse_lat = station_errors.get("azimuth_error", 0.0)
+            rmse_lon = station_errors.get("range_error", 0.0) / 111000  # 距离误差转换为度
+            rmse_alt = station_errors.get("elevation_error", 0.0)
+
+            # 创建记录
+            record = SmoothedTrajectoryResult(
+                task_id=task_id,
+                station_id=station_id,
+                batch_id=batch_id,
+                original_trajectory=original_points,
+                smoothed_trajectory=smoothed_points,
+                rmse_lat=rmse_lat,
+                rmse_lon=rmse_lon,
+                rmse_alt=rmse_alt,
+                point_count=len(points),
+                process_noise=result.match_statistics.get("process_noise") if result.match_statistics else None,
+                measurement_noise=result.match_statistics.get("measurement_noise") if result.match_statistics else None,
+            )
+            self.db.add(record)
+
+    def _save_error_results_from_result(self, task_id: str, result) -> None:
+        """从算法执行结果保存误差结果（多源参考算法）"""
+        for station_id, errors in result.errors.items():
+            error_record = ErrorResult(
+                task_id=task_id,
+                station_id=station_id,
+                azimuth_error=errors.get("azimuth_error", 0.0),
+                range_error=errors.get("range_error", 0.0),
+                elevation_error=errors.get("elevation_error", 0.0),
+                match_count=result.match_statistics.get("total_match_groups", 0),
+                confidence=result.match_statistics.get("station_weights", {}).get(str(station_id)),
+            )
+            self.db.add(error_record)
 
     def _execute_with_legacy_flow(self, task: ErrorAnalysisTask, algorithm) -> None:
         """
@@ -907,7 +981,55 @@ class ErrorAnalysisService:
                 elevation_quality=elevation_quality
             ))
 
-        # 7. 组装返回
+        # 7. 获取平滑轨迹结果（单源盲测算法）
+        from app.schemas.error_analysis import SmoothedTrajectoryResponse, SmoothedTrajectoryPoint
+        smoothed_trajectories = []
+        algorithm_name = task.algorithm_name or ""
+
+        if algorithm_name in self.SINGLE_SOURCE_ALGORITHMS:
+            smoothed_results = self.db.query(SmoothedTrajectoryResult).filter(
+                SmoothedTrajectoryResult.task_id == task_id
+            ).all()
+
+            for sr in smoothed_results:
+                # 转换原始轨迹点
+                original_points = []
+                for p in (sr.original_trajectory or []):
+                    if isinstance(p, dict):
+                        original_points.append(SmoothedTrajectoryPoint(
+                            longitude=p.get("longitude", 0.0),
+                            latitude=p.get("latitude", 0.0),
+                            altitude=p.get("altitude"),
+                        ))
+
+                # 转换平滑轨迹点
+                smoothed_points = []
+                for p in (sr.smoothed_trajectory or []):
+                    if isinstance(p, dict):
+                        smoothed_points.append(SmoothedTrajectoryPoint(
+                            timestamp=p.get("timestamp"),
+                            longitude=p.get("longitude", 0.0),
+                            latitude=p.get("latitude", 0.0),
+                            altitude=p.get("altitude"),
+                            covariance_trace=p.get("covariance_trace"),
+                        ))
+
+                smoothed_trajectories.append(SmoothedTrajectoryResponse(
+                    id=sr.id,
+                    station_id=sr.station_id,
+                    station_name=station_names.get(sr.station_id, f"站{sr.station_id}"),
+                    batch_id=sr.batch_id,
+                    original_trajectory=original_points,
+                    smoothed_trajectory=smoothed_points,
+                    rmse_lat=sr.rmse_lat,
+                    rmse_lon=sr.rmse_lon,
+                    rmse_alt=sr.rmse_alt,
+                    point_count=sr.point_count,
+                    process_noise=sr.process_noise,
+                    measurement_noise=sr.measurement_noise,
+                ))
+
+        # 8. 组装返回
         return {
             "task_id": task.task_id,
             "status": task.status,
@@ -916,6 +1038,7 @@ class ErrorAnalysisService:
             "created_at": task.created_at,
             "started_at": task.started_at,
             "completed_at": task.completed_at,
+            "algorithm_name": algorithm_name,
             "config": config,
             "radar_station_ids": task.radar_station_ids or [],
             "track_ids": task.track_ids or [],
@@ -927,6 +1050,7 @@ class ErrorAnalysisService:
             "interpolated_points": interpolated_points,
             "match_groups": match_groups_detail if include_intermediate else [],
             "error_results": error_results_detail,
+            "smoothed_trajectories": smoothed_trajectories,
             "processing_time_seconds": processing_time,
             "total_segments": len(segments),
             "total_match_groups": len(match_groups_db),

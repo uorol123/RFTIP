@@ -1,0 +1,1702 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>多雷达系统误差分析算法 — 汇报</title>
+        <link
+            rel="stylesheet"
+            href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
+        />
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+                background: #1a1a2e;
+                color: #eee;
+                overflow: hidden;
+                height: 100vh;
+                user-select: none;
+            }
+            .slide-container {
+                width: 100%;
+                height: 100vh;
+                position: relative;
+            }
+            .slide {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                padding: 60px 80px;
+                opacity: 0;
+                transition: opacity 0.5s ease;
+                pointer-events: none;
+            }
+            .slide.active {
+                opacity: 1;
+                pointer-events: auto;
+            }
+
+            /* Title slide */
+            .slide-title {
+                background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            }
+            .slide-title h1 {
+                font-size: 3em;
+                margin-bottom: 20px;
+                background: linear-gradient(90deg, #f7971e, #ffd200);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            .slide-title .subtitle {
+                font-size: 1.3em;
+                color: #aaa;
+                margin-bottom: 40px;
+            }
+            .slide-title .meta {
+                font-size: 1em;
+                color: #888;
+            }
+
+            /* Content slides */
+            .slide h2 {
+                font-size: 2em;
+                margin-bottom: 30px;
+                color: #ffd200;
+                border-bottom: 2px solid #ffd200;
+                padding-bottom: 10px;
+            }
+            .slide h3 {
+                font-size: 1.4em;
+                color: #f7971e;
+                margin: 20px 0 12px;
+            }
+
+            .row {
+                display: flex;
+                width: 100%;
+                gap: 40px;
+                align-items: center;
+            }
+            .col {
+                flex: 1;
+            }
+            .col-3 {
+                flex: 1;
+            }
+            .col-2 {
+                flex: 1;
+            }
+
+            /* Cards */
+            .card {
+                background: rgba(255, 255, 255, 0.06);
+                border-radius: 12px;
+                padding: 24px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .card h3 {
+                margin-top: 0;
+            }
+
+            /* Flow steps */
+            .flow {
+                display: flex;
+                gap: 20px;
+                flex-wrap: wrap;
+                justify-content: center;
+                margin: 20px 0;
+            }
+            .flow-step {
+                background: linear-gradient(135deg, #302b63, #24243e);
+                border-radius: 12px;
+                padding: 16px 20px;
+                text-align: center;
+                min-width: 120px;
+                border: 1px solid rgba(255, 210, 0, 0.3);
+                position: relative;
+            }
+            .flow-step .step-num {
+                font-size: 0.8em;
+                color: #f7971e;
+            }
+            .flow-step .step-text {
+                font-size: 0.9em;
+                margin-top: 6px;
+                color: #ccc;
+            }
+
+            /* Tables */
+            table {
+                border-collapse: collapse;
+                width: 100%;
+                margin: 10px 0;
+            }
+            th,
+            td {
+                padding: 10px 16px;
+                text-align: left;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            th {
+                color: #ffd200;
+                font-size: 0.95em;
+            }
+            td {
+                font-size: 0.9em;
+                color: #ccc;
+            }
+            tr:hover td {
+                background: rgba(255, 255, 255, 0.03);
+            }
+
+            /* Tags */
+            .tag-good {
+                display: inline-block;
+                background: rgba(76, 175, 80, 0.2);
+                color: #81c784;
+                padding: 2px 10px;
+                border-radius: 20px;
+                font-size: 0.85em;
+            }
+            .tag-bad {
+                display: inline-block;
+                background: rgba(244, 67, 54, 0.2);
+                color: #e57373;
+                padding: 2px 10px;
+                border-radius: 20px;
+                font-size: 0.85em;
+            }
+            .tag-warn {
+                display: inline-block;
+                background: rgba(255, 152, 0, 0.2);
+                color: #ffb74d;
+                padding: 2px 10px;
+                border-radius: 20px;
+                font-size: 0.85em;
+            }
+
+            /* Chart areas */
+            .chart-box {
+                width: 100%;
+                height: 350px;
+                border-radius: 12px;
+                background: rgba(0, 0, 0, 0.2);
+            }
+            .chart-box-lg {
+                width: 100%;
+                height: 450px;
+            }
+            .chart-half {
+                width: 48%;
+                height: 350px;
+                display: inline-block;
+            }
+
+            /* Navigation */
+            .nav {
+                position: fixed;
+                bottom: 20px;
+                right: 30px;
+                z-index: 100;
+                display: flex;
+                gap: 10px;
+            }
+            .nav button {
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: #ccc;
+                padding: 8px 16px;
+                border-radius: 20px;
+                cursor: pointer;
+                font-size: 0.9em;
+                transition: all 0.2s;
+            }
+            .nav button:hover {
+                background: rgba(255, 210, 0, 0.2);
+                border-color: #ffd200;
+                color: #ffd200;
+            }
+            .nav .page-num {
+                color: #888;
+                font-size: 0.9em;
+                display: flex;
+                align-items: center;
+                padding: 0 8px;
+            }
+
+            /* Bullet list */
+            .bullets {
+                list-style: none;
+            }
+            .bullets li {
+                padding: 6px 0;
+                padding-left: 20px;
+                position: relative;
+                font-size: 1em;
+                color: #ccc;
+            }
+            .bullets li::before {
+                content: "▸";
+                position: absolute;
+                left: 0;
+                color: #ffd200;
+            }
+
+            /* Formula block */
+            .formula-block {
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 8px;
+                padding: 14px 20px;
+                margin: 8px 0;
+                font-size: 0.95em;
+                overflow-x: auto;
+                border-left: 3px solid #ffd200;
+            }
+
+            /* Highlight */
+            .hl {
+                color: #ffd200;
+                font-weight: bold;
+            }
+
+            /* Card grid */
+            .card-grid {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 20px;
+                width: 100%;
+            }
+            .card-grid-2 {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 20px;
+                width: 100%;
+            }
+
+            /* Arrow between steps */
+            .flow-arrow {
+                color: #f7971e;
+                font-size: 1.2em;
+                display: flex;
+                align-items: center;
+            }
+
+            /* Progress bar */
+            .progress-bar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 3px;
+                background: #ffd200;
+                z-index: 200;
+                transition: width 0.3s;
+            }
+
+            /* Small note */
+            .note {
+                font-size: 0.85em;
+                color: #888;
+                margin-top: 10px;
+            }
+
+            /* Demo example box */
+            .example-box {
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 10px;
+                padding: 16px 24px;
+                font-family: "Consolas", "Courier New", monospace;
+                font-size: 0.9em;
+                line-height: 1.8;
+            }
+            .example-box .hl-line {
+                color: #ffd200;
+            }
+            .example-box .ok {
+                color: #81c784;
+            }
+            .example-box .bad {
+                color: #e57373;
+            }
+
+            /* Blinking cursor for highlight */
+            @keyframes pulse {
+                0%,
+                100% {
+                    opacity: 1;
+                }
+                50% {
+                    opacity: 0.3;
+                }
+            }
+            .pulse {
+                animation: pulse 2s infinite;
+            }
+
+            @media (max-width: 1200px) {
+                .slide {
+                    padding: 40px 40px;
+                }
+                .slide h2 {
+                    font-size: 1.6em;
+                }
+                .card-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="progress-bar" id="progress"></div>
+
+        <div class="slide-container">
+            <!-- Slide 1: Title -->
+            <div class="slide slide-title active" data-slide="0">
+                <h1>多雷达系统误差分析算法</h1>
+                <div class="meta">汇报 &nbsp;|&nbsp; 2026年4月</div>
+            </div>
+
+            <!-- Slide 2: Problem Background -->
+            <div class="slide" data-slide="1">
+                <h2>问题背景</h2>
+                <div class="row">
+                    <div class="col">
+                        <div class="card" style="margin-bottom: 20px">
+                            <h3>核心问题</h3>
+                            <p
+                                style="
+                                    font-size: 1.1em;
+                                    line-height: 1.8;
+                                    color: #ccc;
+                                "
+                            >
+                                多个雷达站同时观测同一目标时，如何从观测数据中<br />
+                                <span class="hl">识别故障雷达站</span
+                                >，并计算各站的
+                                <span class="hl">系统误差</span>？
+                            </p>
+                        </div>
+                        <div class="card">
+                            <h3>输入 & 输出</h3>
+                            <table>
+                                <tr>
+                                    <th style="width: 60px">输入</th>
+                                    <td>
+                                        多雷达站对同一批飞机目标的观测数据（含雷达站真实位置）
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>输出</th>
+                                    <td>
+                                        故障站识别 +
+                                        各站系统误差（方位角偏差、距离偏差、高度偏差）
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="chart-box" id="chart-problem"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 3: Traditional RANSAC - Overview -->
+            <div class="slide" data-slide="2">
+                <h2>一、传统 RANSAC 算法</h2>
+                <div class="row">
+                    <div class="col">
+                        <div class="card" style="margin-bottom: 16px">
+                            <h3>核心思想</h3>
+                            <p style="color: #ccc; line-height: 1.7">
+                                通过<span class="hl">随机采样</span>找到"<span
+                                    class="hl"
+                                    >最大一致集</span
+                                >"——哪些雷达站的观测是一致的（内点），哪些站偏离了一致性（外点/故障站）。
+                            </p>
+                        </div>
+                        <div class="flow" style="justify-content: flex-start">
+                            <div class="flow-step">
+                                <div class="step-num">Step 1</div>
+                                <div class="step-text">计算几何中心</div>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">
+                                <div class="step-num">Step 2</div>
+                                <div class="step-text">
+                                    随机选2站<br />假设为内点
+                                </div>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">
+                                <div class="step-num">Step 3</div>
+                                <div class="step-text">
+                                    验证其他站<br />计算残差
+                                </div>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">
+                                <div class="step-num">Step 4</div>
+                                <div class="step-text">
+                                    记录最优<br />内点集
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="chart-box" id="chart-ransac-iter"></div>
+                    </div>
+                </div>
+                <div class="row" style="margin-top: 20px">
+                    <div class="col">
+                        <span class="tag-good">原理清晰</span>
+                        <span class="tag-good">支持多故障站</span>
+                        <span class="tag-good">噪声鲁棒</span>
+                    </div>
+                    <div class="col">
+                        <span class="tag-bad">随机性导致结果不稳定</span>
+                        <span class="tag-bad">选到2个健康站概率低</span>
+                        <span class="tag-warn">复杂度 O(N×K)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 4: Traditional RANSAC - Math -->
+            <div class="slide" data-slide="3">
+                <h2>传统 RANSAC — 数学表达 & 流程细节</h2>
+                <div class="row">
+                    <div class="col">
+                        <div class="card" style="margin-bottom: 16px">
+                            <h3>内点判定公式</h3>
+                            <div class="formula-block">
+                                $$\text{内点判定} = \begin{cases} \text{内点} &
+                                \text{if } \|p_i - (p_{center} + \Delta p_i)\| <
+                                \tau \\ \text{外点} & \text{otherwise}
+                                \end{cases}$$
+                            </div>
+                        </div>
+                        <div class="card">
+                            <h3>参数说明</h3>
+                            <ul class="bullets">
+                                <li>$p_i$：第 i 个站的观测位置</li>
+                                <li>$p_{center}$：几何中心（质心）</li>
+                                <li>$\Delta p_i$：基于内点估计的系统误差</li>
+                                <li>$\tau$：判定阈值（如 0.01 度 ≈ 1km）</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="card">
+                            <h3>迭代过程示意</h3>
+                            <div
+                                class="chart-box"
+                                id="chart-ransac-detail"
+                            ></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 5: Gradient Descent -->
+            <div class="slide" data-slide="4">
+                <h2>二、迭代寻优算法（梯度下降法）</h2>
+                <div class="row">
+                    <div class="col">
+                        <div class="card" style="margin-bottom: 16px">
+                            <h3>核心思想</h3>
+                            <p style="color: #ccc; line-height: 1.7">
+                                假设所有站都健康，通过<span class="hl"
+                                    >梯度下降</span
+                                >寻找使观测点方差最小的系统误差参数。
+                            </p>
+                        </div>
+                        <div class="formula-block">
+                            $$E = \sum_{i=1}^{n} \|p_i^{corrected} -
+                            p_{center}\|^2 \quad \rightarrow \quad \min$$
+                        </div>
+                        <div
+                            class="flow"
+                            style="
+                                justify-content: flex-start;
+                                margin-top: 12px;
+                            "
+                        >
+                            <div class="flow-step">
+                                <div class="step-num">Step 1</div>
+                                <div class="step-text">初始化<br />Δθ = 0</div>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">
+                                <div class="step-num">Step 2</div>
+                                <div class="step-text">计算梯度<br />∇E</div>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">
+                                <div class="step-num">Step 3</div>
+                                <div class="step-text">
+                                    更新参数<br />θ -= α·∇E
+                                </div>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step">
+                                <div class="step-num">Step 4</div>
+                                <div class="step-text">收敛?<br />输出结果</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="chart-box" id="chart-gd"></div>
+                    </div>
+                </div>
+                <div style="margin-top: 16px">
+                    <span class="tag-good">收敛快、精度高</span>
+                    <span class="tag-bad">无法识别故障站</span>
+                    <span class="tag-warn">需假设全部健康</span>
+                </div>
+            </div>
+
+            <!-- Slide 6: Heuristic RANSAC - Idea -->
+            <div class="slide" data-slide="5">
+                <h2>三、启发式 RANSAC 算法 — 动机与思想</h2>
+                <div class="row">
+                    <div class="col">
+                        <div class="card" style="margin-bottom: 16px">
+                            <h3>为什么需要改进？</h3>
+                            <ul class="bullets">
+                                <li>
+                                    传统 RANSAC 随机选 2 站，选到健康站对的<span
+                                        class="hl"
+                                        >概率不高</span
+                                    >
+                                </li>
+                                <li>
+                                    迭代次数影响结果<span class="hl"
+                                        >稳定性</span
+                                    >
+                                </li>
+                                <li>
+                                    能否用<span class="hl">确定性的方法</span
+                                    >替代随机采样？
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="card">
+                            <h3>核心观察</h3>
+                            <ul class="bullets">
+                                <li>
+                                    ✅ 健康站观测偏差
+                                    <span class="hl">极小</span>（接近 0）
+                                </li>
+                                <li>
+                                    ❌ 故障站观测偏差
+                                    <span class="hl">突然变大</span>
+                                </li>
+                                <li>
+                                    💡 找到偏差的
+                                    <span class="hl">差值突变点</span>
+                                    就能自动区分！
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="chart-box" id="chart-heuristic-idea"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 7: Heuristic RANSAC - Flow -->
+            <div class="slide" data-slide="6">
+                <h2>启发式 RANSAC — 算法流程</h2>
+                <div class="flow" style="margin-bottom: 20px">
+                    <div class="flow-step">
+                        <div class="step-num">Step 1</div>
+                        <div class="step-text">
+                            计算几何中心 C<br />$C = \frac{1}{n}\sum p_i$
+                        </div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-num">Step 2</div>
+                        <div class="step-text">
+                            计算偏差排序<br />$d_i = \|p_i - C\|$
+                        </div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-num">Step 3</div>
+                        <div class="step-text">
+                            检测跳变点<br />$jump_j = d_{j+1} - d_j$
+                        </div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-num">Step 4</div>
+                        <div class="step-text">
+                            统计故障站<br />outlier_ratio > T?
+                        </div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="step-num">Step 5</div>
+                        <div class="step-text">健康站加权<br />最小二乘</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <div class="chart-box" id="chart-heuristic-jump"></div>
+                    </div>
+                    <div class="col">
+                        <div class="card">
+                            <h3>关键参数</h3>
+                            <table>
+                                <tr>
+                                    <th>参数</th>
+                                    <th>说明</th>
+                                    <th>典型值</th>
+                                </tr>
+                                <tr>
+                                    <td>jump_threshold</td>
+                                    <td>跳变检测阈值</td>
+                                    <td>0.01° (~1km)</td>
+                                </tr>
+                                <tr>
+                                    <td>outlier_ratio_threshold</td>
+                                    <td>故障站判定阈值</td>
+                                    <td>0.5 (50%)</td>
+                                </tr>
+                                <tr>
+                                    <td>min_healthy_stations</td>
+                                    <td>最少健康站数</td>
+                                    <td>2</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 8: Heuristic RANSAC - Example -->
+            <div class="slide" data-slide="7">
+                <h2>启发式 RANSAC — 示例演示</h2>
+                <div class="row">
+                    <div class="col">
+                        <div class="card" style="margin-bottom: 16px">
+                            <h3>6 个雷达站的偏差数据</h3>
+                            <div class="example-box">
+                                <div>
+                                    排序前偏差：<span class="bad"
+                                        >[0.003, 0.25, 0.001, 0.02, 0.3,
+                                        0.002]</span
+                                    >
+                                </div>
+                                <div style="margin-top: 8px">
+                                    排序后偏差：<span class="ok"
+                                        >[0.001, 0.002, 0.003,</span
+                                    >
+                                    <span class="bad">0.02, 0.25, 0.3]</span>
+                                </div>
+                                <div style="margin-top: 8px">
+                                    相邻差值 &nbsp;：<span class="ok"
+                                        >[0.001, 0.001,</span
+                                    >
+                                    <span class="hl-line pulse">0.017</span
+                                    ><span class="bad">, 0.23, 0.05]</span>
+                                </div>
+                                <div
+                                    style="
+                                        margin-top: 12px;
+                                        border-top: 1px solid
+                                            rgba(255, 255, 255, 0.1);
+                                        padding-top: 8px;
+                                    "
+                                >
+                                    🔍 最大跳变
+                                    <span class="hl">0.23</span> &gt;
+                                    jump_threshold (0.01)<br />
+                                    ✅ 健康站(1-3)：站1, 站2, 站3 &nbsp;|&nbsp;
+                                    ❌ 故障站(4-6)：站4, 站5, 站6
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="chart-box" id="chart-heuristic-demo"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 9: Heuristic vs Traditional RANSAC -->
+            <div class="slide" data-slide="8">
+                <h2>传统 RANSAC vs 启发式 RANSAC</h2>
+                <div class="row">
+                    <div class="col">
+                        <div class="chart-box" id="chart-ransac-vs"></div>
+                    </div>
+                    <div class="col">
+                        <table>
+                            <tr>
+                                <th>特性</th>
+                                <th>传统 RANSAC</th>
+                                <th>启发式 RANSAC</th>
+                            </tr>
+                            <tr>
+                                <td>采样方式</td>
+                                <td><span class="tag-warn">随机采样</span></td>
+                                <td>
+                                    <span class="tag-good">确定性排序</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>迭代次数</td>
+                                <td>多次 (N次)</td>
+                                <td>一次排序</td>
+                            </tr>
+                            <tr>
+                                <td>结果稳定性</td>
+                                <td>
+                                    <span class="tag-bad">依赖随机种子</span>
+                                </td>
+                                <td>
+                                    <span class="tag-good">完全确定性</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>故障识别</td>
+                                <td>统计外点比例</td>
+                                <td>检测差值突变点</td>
+                            </tr>
+                            <tr>
+                                <td>计算复杂度</td>
+                                <td>O(N × K)</td>
+                                <td>
+                                    <span class="tag-good">O(N log N)</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>适合场景</td>
+                                <td>多故障站混合</td>
+                                <td>单一/少量故障站</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 10: Algorithm Comparison -->
+            <div class="slide" data-slide="9">
+                <h2>四、算法对比总结</h2>
+                <div
+                    class="chart-box"
+                    id="chart-compare-radar"
+                    style="height: 300px; margin-bottom: 20px"
+                ></div>
+                <table>
+                    <tr>
+                        <th>特性</th>
+                        <th>传统 RANSAC</th>
+                        <th>迭代寻优</th>
+                        <th>启发式 RANSAC</th>
+                    </tr>
+                    <tr>
+                        <td>故障识别能力</td>
+                        <td><span class="tag-good">✔ 支持</span></td>
+                        <td><span class="tag-bad">✘ 不支持</span></td>
+                        <td><span class="tag-good">✔ 支持</span></td>
+                    </tr>
+                    <tr>
+                        <td>计算方式</td>
+                        <td>随机采样+迭代</td>
+                        <td>梯度下降迭代</td>
+                        <td>排序+突变检测</td>
+                    </tr>
+                    <tr>
+                        <td>结果稳定性</td>
+                        <td><span class="tag-warn">随机性</span></td>
+                        <td><span class="tag-good">确定性</span></td>
+                        <td><span class="tag-good">确定性</span></td>
+                    </tr>
+                    <tr>
+                        <td>适用场景</td>
+                        <td>多故障站混合</td>
+                        <td>已知全部健康</td>
+                        <td>单一故障站</td>
+                    </tr>
+                    <tr>
+                        <td>计算效率</td>
+                        <td>中等</td>
+                        <td><span class="tag-good">高</span></td>
+                        <td><span class="tag-good">高</span></td>
+                    </tr>
+                    <tr>
+                        <td>参数敏感性</td>
+                        <td>迭代次数+阈值</td>
+                        <td>学习率+收敛</td>
+                        <td>跳变阈值</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Slide 11: Practical Suggestions -->
+            <div class="slide" data-slide="10">
+                <h2>五、实际应用建议 & 总结</h2>
+                <div class="card-grid-2">
+                    <div class="card">
+                        <h3>🥇 优先使用启发式 RANSAC</h3>
+                        <p style="color: #ccc; line-height: 1.7">
+                            故障站数量较少时，可<span class="hl"
+                                >稳定、快速</span
+                            >地识别故障站。确定性结果，无需调随机种子。
+                        </p>
+                    </div>
+                    <div class="card">
+                        <h3>🥈 迭代寻优作为补充</h3>
+                        <p style="color: #ccc; line-height: 1.7">
+                            故障站已剔除后，用梯度下降获得<span class="hl"
+                                >更高精度</span
+                            >的误差计算。
+                        </p>
+                    </div>
+                    <div class="card">
+                        <h3>🥉 传统 RANSAC 作为备选</h3>
+                        <p style="color: #ccc; line-height: 1.7">
+                            故障站数量不确定且较多时，使用传统 RANSAC
+                            进行全局搜索。
+                        </p>
+                    </div>
+                    <div class="card">
+                        <h3>⚙️ 参数调优建议</h3>
+                        <ul class="bullets">
+                            <li>
+                                <span class="hl">jump_threshold</span
+                                >：0.01-0.02°（根据雷达间距）
+                            </li>
+                            <li>
+                                <span class="hl">outlier_ratio_threshold</span
+                                >：0.3-0.5
+                            </li>
+                            <li>兼顾识别能力与容错性</li>
+                        </ul>
+                    </div>
+                </div>
+                <div style="margin-top: 20px; text-align: center">
+                    <p style="color: #888; font-size: 0.9em">
+                        算法已集成至 RFTIP 误差分析模块，支持单源/多源盲测模式
+                    </p>
+                </div>
+            </div>
+        </div>
+        <!-- /.slide-container -->
+
+        <div class="nav">
+            <button onclick="prevSlide()">◀ 上一页</button>
+            <span class="page-num" id="page-num">1 / 11</span>
+            <button onclick="nextSlide()">下一页 ▶</button>
+        </div>
+
+        <script>
+            // ===== Slide Navigation =====
+            let currentSlide = 0;
+            const totalSlides = 11;
+            const slides = document.querySelectorAll(".slide");
+            const charts = {}; // store echarts instances
+
+            function showSlide(n) {
+                slides[currentSlide].classList.remove("active");
+                currentSlide = (n + totalSlides) % totalSlides;
+                slides[currentSlide].classList.add("active");
+                document.getElementById("page-num").textContent =
+                    currentSlide + 1 + " / " + totalSlides;
+                document.getElementById("progress").style.width =
+                    ((currentSlide + 1) / totalSlides) * 100 + "%";
+                // Resize charts on the new slide
+                setTimeout(() => {
+                    Object.values(charts).forEach((c) => {
+                        try {
+                            c.resize();
+                        } catch (e) {}
+                    });
+                }, 100);
+            }
+
+            function nextSlide() {
+                showSlide(currentSlide + 1);
+            }
+            function prevSlide() {
+                showSlide(currentSlide - 1);
+            }
+            document.addEventListener("keydown", (e) => {
+                if (
+                    e.key === "ArrowRight" ||
+                    e.key === "ArrowDown" ||
+                    e.key === " "
+                ) {
+                    e.preventDefault();
+                    nextSlide();
+                }
+                if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    prevSlide();
+                }
+            });
+
+            // Init echarts for visible slides
+            function initChart(id, option) {
+                const dom = document.getElementById(id);
+                if (!dom) return;
+                if (charts[id]) charts[id].dispose();
+                const chart = echarts.init(dom);
+                chart.setOption(
+                    Object.assign({ backgroundColor: "transparent" }, option),
+                );
+                charts[id] = chart;
+            }
+
+            // Resize all on window resize
+            window.addEventListener("resize", () => {
+                Object.values(charts).forEach((c) => {
+                    try {
+                        c.resize();
+                    } catch (e) {}
+                });
+            });
+
+            // ===== Chart Definitions =====
+
+            // Slide 2: Problem illustration
+            function initProblemChart() {
+                initChart("chart-problem", {
+                    title: {
+                        text: "多雷达观测示意图",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 14 },
+                    },
+                    tooltip: { trigger: "item" },
+                    animation: true,
+                    grid: { top: 40, bottom: 30, left: 50, right: 20 },
+                    xAxis: {
+                        name: "经度偏移 (°)",
+                        nameTextStyle: { color: "#888" },
+                        axisLine: { lineStyle: { color: "#555" } },
+                    },
+                    yAxis: {
+                        name: "纬度偏移 (°)",
+                        nameTextStyle: { color: "#888" },
+                        axisLine: { lineStyle: { color: "#555" } },
+                    },
+                    series: [
+                        {
+                            type: "scatter",
+                            symbolSize: 16,
+                            data: [
+                                {
+                                    value: [0.001, 0.002],
+                                    name: "雷达站1",
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: [0.002, -0.001],
+                                    name: "雷达站2",
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: [0.0, 0.003],
+                                    name: "雷达站3",
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: [0.015, 0.02],
+                                    name: "雷达站4 (故障)",
+                                    itemStyle: { color: "#f44336" },
+                                },
+                                {
+                                    value: [0.018, -0.015],
+                                    name: "雷达站5 (故障)",
+                                    itemStyle: { color: "#f44336" },
+                                },
+                            ],
+                            label: {
+                                show: true,
+                                formatter: "{b}",
+                                position: "right",
+                                color: "#ccc",
+                                fontSize: 10,
+                            },
+                            markPoint: {
+                                data: [
+                                    {
+                                        coord: [0.001, 0.001],
+                                        name: "真实位置",
+                                        symbol: "diamond",
+                                        symbolSize: 14,
+                                        itemStyle: { color: "#ffd200" },
+                                        label: {
+                                            color: "#ffd200",
+                                            fontSize: 10,
+                                        },
+                                    },
+                                ],
+                                animation: true,
+                            },
+                            markArea: {
+                                silent: true,
+                                data: [
+                                    [
+                                        {
+                                            xAxis: -0.005,
+                                            yAxis: -0.005,
+                                            itemStyle: {
+                                                color: "rgba(76,175,80,0.08)",
+                                            },
+                                        },
+                                        { xAxis: 0.005, yAxis: 0.005 },
+                                    ],
+                                ],
+                                label: {
+                                    show: true,
+                                    position: "insideTopLeft",
+                                    color: "#4caf50",
+                                    fontSize: 10,
+                                    formatter: "健康站聚集区",
+                                },
+                            },
+                        },
+                    ],
+                });
+            }
+
+            // Slide 3: RANSAC iteration convergence
+            function initRansacIterChart() {
+                initChart("chart-ransac-iter", {
+                    title: {
+                        text: "RANSAC 迭代收敛过程",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 14 },
+                    },
+                    tooltip: { trigger: "axis" },
+                    grid: { top: 50, bottom: 40, left: 55, right: 20 },
+                    xAxis: {
+                        name: "迭代次数",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { color: "#888" },
+                    },
+                    yAxis: {
+                        name: "内点数量",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { color: "#888" },
+                    },
+                    series: [
+                        {
+                            type: "line",
+                            data: [
+                                0, 2, 2, 3, 3, 3, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7,
+                                7, 7, 8, 8, 8, 8, 8, 9, 9, 10,
+                            ],
+                            lineStyle: { color: "#ffd200", width: 2 },
+                            itemStyle: { color: "#ffd200" },
+                            markLine: {
+                                silent: true,
+                                lineStyle: { color: "#f44336", type: "dashed" },
+                                data: [
+                                    {
+                                        yAxis: 8,
+                                        label: {
+                                            formatter: "最优解 = 8",
+                                            color: "#f44336",
+                                            fontSize: 10,
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                });
+            }
+
+            // Slide 4: RANSAC detail
+            function initRansacDetailChart() {
+                initChart("chart-ransac-detail", {
+                    title: {
+                        text: "随机选2站 → 验证其他站",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 13 },
+                    },
+                    tooltip: { trigger: "item" },
+                    grid: { top: 40, bottom: 30, left: 50, right: 20 },
+                    xAxis: {
+                        name: "x",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { show: false },
+                    },
+                    yAxis: {
+                        name: "y",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { show: false },
+                    },
+                    series: [
+                        {
+                            type: "scatter",
+                            symbolSize: 18,
+                            data: [
+                                {
+                                    value: [1, 1],
+                                    name: "站1 ✓",
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: [2, 1.2],
+                                    name: "站2 ✓",
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: [1.5, 2.5],
+                                    name: "站3?",
+                                    itemStyle: { color: "#ff9800" },
+                                },
+                                {
+                                    value: [0.8, 0.9],
+                                    name: "站4?",
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: [3.5, 4],
+                                    name: "站5 ✗",
+                                    itemStyle: { color: "#f44336" },
+                                },
+                            ],
+                            label: {
+                                show: true,
+                                formatter: "{b}",
+                                color: "#ccc",
+                                fontSize: 10,
+                                position: "right",
+                            },
+                            markLine: {
+                                silent: true,
+                                symbol: "none",
+                                lineStyle: {
+                                    color: "#ffd200",
+                                    type: "dashed",
+                                    width: 1,
+                                },
+                                data: [
+                                    {
+                                        label: {
+                                            formatter: "阈值 τ",
+                                            color: "#ffd200",
+                                            fontSize: 9,
+                                        },
+                                        yAxis: "max",
+                                        value: 2.5,
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                });
+            }
+
+            // Slide 5: Gradient Descent
+            function initGDChart() {
+                const steps = [];
+                let x = -0.04,
+                    y = 0.03; // starting point (initial error guess)
+                for (let i = 0; i < 40; i++) {
+                    steps.push([x, y]);
+                    // gradient of E = (x^2 + y^2) + 0.3*sin(5x)*sin(5y) -- a bumpy convex surface
+                    const gradX =
+                        2 * x + 1.5 * Math.cos(5 * x) * Math.sin(5 * y);
+                    const gradY =
+                        2 * y + 1.5 * Math.sin(5 * x) * Math.cos(5 * y);
+                    const lr = 0.08 * Math.exp(-i * 0.08);
+                    x -= lr * gradX;
+                    y -= lr * gradY;
+                }
+                initChart("chart-gd", {
+                    title: {
+                        text: "梯度下降收敛路径（目标函数等高线）",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 14 },
+                    },
+                    tooltip: { trigger: "axis" },
+                    grid: { top: 40, bottom: 30, left: 55, right: 20 },
+                    xAxis: {
+                        name: "Δazimuth (°)",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { color: "#888" },
+                    },
+                    yAxis: {
+                        name: "Δrange (°)",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { color: "#888" },
+                    },
+                    series: [
+                        {
+                            type: "line",
+                            data: steps,
+                            lineStyle: { color: "#ffd200", width: 2 },
+                            itemStyle: { color: "#ffd200" },
+                            symbol: "circle",
+                            symbolSize: 4,
+                            markPoint: {
+                                animation: true,
+                                data: [
+                                    {
+                                        coord: [0, 0],
+                                        name: "全局最优",
+                                        symbol: "pin",
+                                        symbolSize: 35,
+                                        itemStyle: { color: "#4caf50" },
+                                        label: { color: "#4caf50" },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                });
+            }
+
+            // Slide 6: Heuristic idea visualization
+            function initHeuristicIdeaChart() {
+                initChart("chart-heuristic-idea", {
+                    title: {
+                        text: "观测偏差分布示意",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 14 },
+                    },
+                    tooltip: {
+                        trigger: "axis",
+                        axisPointer: { type: "shadow" },
+                    },
+                    grid: { top: 40, bottom: 30, left: 50, right: 20 },
+                    xAxis: {
+                        data: ["站1", "站2", "站3", "站4", "站5", "站6"],
+                        axisLabel: { color: "#888" },
+                    },
+                    yAxis: {
+                        name: "偏差 (度)",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { color: "#888" },
+                    },
+                    series: [
+                        {
+                            type: "bar",
+                            barWidth: "50%",
+                            data: [
+                                {
+                                    value: 0.001,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.002,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.003,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.02,
+                                    itemStyle: { color: "#ff9800" },
+                                },
+                                {
+                                    value: 0.25,
+                                    itemStyle: { color: "#f44336" },
+                                },
+                                { value: 0.3, itemStyle: { color: "#f44336" } },
+                            ],
+                            markLine: {
+                                silent: true,
+                                lineStyle: {
+                                    color: "#ffd200",
+                                    type: "dashed",
+                                    width: 2,
+                                },
+                                data: [
+                                    {
+                                        xAxis: 3.5,
+                                        label: {
+                                            formatter: "突变点 ◀",
+                                            color: "#ffd200",
+                                            fontSize: 10,
+                                            position: "start",
+                                        },
+                                    },
+                                ],
+                            },
+                            label: {
+                                show: true,
+                                position: "top",
+                                color: "#ccc",
+                                fontSize: 10,
+                            },
+                        },
+                    ],
+                });
+            }
+
+            // Slide 7: Jump detection
+            function initHeuristicJumpChart() {
+                initChart("chart-heuristic-jump", {
+                    title: {
+                        text: "相邻偏差差值（跳变检测）",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 13 },
+                    },
+                    tooltip: { trigger: "axis" },
+                    grid: { top: 50, bottom: 30, left: 50, right: 20 },
+                    xAxis: {
+                        data: ["d₂-d₁", "d₃-d₂", "d₄-d₃", "d₅-d₄", "d₆-d₅"],
+                        axisLabel: { color: "#888" },
+                    },
+                    yAxis: {
+                        name: "跳变值",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { color: "#888" },
+                    },
+                    series: [
+                        {
+                            type: "bar",
+                            barWidth: "50%",
+                            data: [
+                                {
+                                    value: 0.001,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.001,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.017,
+                                    itemStyle: { color: "#ff9800" },
+                                },
+                                {
+                                    value: 0.23,
+                                    itemStyle: { color: "#f44336" },
+                                },
+                                {
+                                    value: 0.05,
+                                    itemStyle: { color: "#e57373" },
+                                },
+                            ],
+                            label: {
+                                show: true,
+                                position: "top",
+                                color: "#ccc",
+                                fontSize: 10,
+                            },
+                            markLine: {
+                                silent: true,
+                                data: [
+                                    {
+                                        yAxis: 0.01,
+                                        lineStyle: {
+                                            color: "#ffd200",
+                                            type: "dashed",
+                                            width: 2,
+                                        },
+                                        label: {
+                                            formatter: "阈值 = 0.01",
+                                            color: "#ffd200",
+                                            fontSize: 9,
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                });
+            }
+
+            // Slide 8: Heuristic demo
+            function initHeuristicDemoChart() {
+                initChart("chart-heuristic-demo", {
+                    title: {
+                        text: "排序后偏差 — 突变分割",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 13 },
+                    },
+                    tooltip: { trigger: "axis" },
+                    grid: { top: 40, bottom: 30, left: 55, right: 20 },
+                    xAxis: {
+                        data: [
+                            "d₁ 0.001",
+                            "d₂ 0.002",
+                            "d₃ 0.003",
+                            "d₄ 0.02",
+                            "d₅ 0.25",
+                            "d₆ 0.3",
+                        ],
+                        axisLabel: { color: "#888", rotate: 15 },
+                    },
+                    yAxis: {
+                        name: "偏差值",
+                        nameTextStyle: { color: "#888" },
+                        axisLabel: { color: "#888" },
+                    },
+                    series: [
+                        {
+                            type: "bar",
+                            barWidth: "55%",
+                            data: [
+                                {
+                                    value: 0.001,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.002,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.003,
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: 0.02,
+                                    itemStyle: { color: "#f44336" },
+                                },
+                                {
+                                    value: 0.25,
+                                    itemStyle: { color: "#f44336" },
+                                },
+                                { value: 0.3, itemStyle: { color: "#f44336" } },
+                            ],
+                            label: {
+                                show: true,
+                                position: "top",
+                                color: "#ccc",
+                                fontSize: 10,
+                            },
+                            markArea: {
+                                silent: true,
+                                data: [
+                                    [
+                                        {
+                                            xAxis: 0,
+                                            itemStyle: {
+                                                color: "rgba(76,175,80,0.15)",
+                                            },
+                                        },
+                                        { xAxis: 2 },
+                                    ],
+                                    [
+                                        {
+                                            xAxis: 3,
+                                            itemStyle: {
+                                                color: "rgba(244,67,54,0.15)",
+                                            },
+                                        },
+                                        { xAxis: 5 },
+                                    ],
+                                ],
+                            },
+                        },
+                    ],
+                });
+            }
+
+            // Slide 9: RANSAC vs Heuristic radar chart
+            function initRansacVsChart() {
+                initChart("chart-ransac-vs", {
+                    title: {
+                        text: "算法特性对比雷达图",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 14 },
+                    },
+                    tooltip: {},
+                    legend: {
+                        data: ["传统RANSAC", "启发式RANSAC"],
+                        bottom: 0,
+                        textStyle: { color: "#ccc" },
+                    },
+                    radar: {
+                        center: ["50%", "55%"],
+                        radius: "60%",
+                        indicator: [
+                            { name: "稳定性", max: 10 },
+                            { name: "计算效率", max: 10 },
+                            { name: "实现复杂度", max: 10 },
+                            { name: "故障识别", max: 10 },
+                            { name: "精度", max: 10 },
+                        ],
+                        axisName: { color: "#888" },
+                        splitArea: {
+                            areaStyle: {
+                                color: [
+                                    "rgba(255,210,0,0.02)",
+                                    "rgba(255,210,0,0.02)",
+                                ],
+                            },
+                        },
+                    },
+                    series: [
+                        {
+                            type: "radar",
+                            data: [
+                                {
+                                    value: [5, 5, 6, 8, 7],
+                                    name: "传统RANSAC",
+                                    lineStyle: { color: "#2196f3" },
+                                    areaStyle: {
+                                        color: "rgba(33,150,243,0.15)",
+                                    },
+                                    itemStyle: { color: "#2196f3" },
+                                },
+                                {
+                                    value: [9, 9, 7, 7, 7],
+                                    name: "启发式RANSAC",
+                                    lineStyle: { color: "#ffd200" },
+                                    areaStyle: {
+                                        color: "rgba(255,210,0,0.15)",
+                                    },
+                                    itemStyle: { color: "#ffd200" },
+                                },
+                            ],
+                        },
+                    ],
+                });
+            }
+
+            // Slide 10: Three algorithms comparison radar chart
+            function initCompareRadarChart() {
+                initChart("chart-compare-radar", {
+                    title: {
+                        text: "三算法全方位对比",
+                        left: "center",
+                        textStyle: { color: "#ccc", fontSize: 14 },
+                    },
+                    tooltip: {},
+                    legend: {
+                        data: ["传统RANSAC", "迭代寻优", "启发式RANSAC"],
+                        bottom: 0,
+                        textStyle: { color: "#ccc" },
+                    },
+                    radar: {
+                        center: ["50%", "55%"],
+                        radius: "60%",
+                        indicator: [
+                            { name: "稳定性", max: 10 },
+                            { name: "计算效率", max: 10 },
+                            { name: "故障识别", max: 10 },
+                            { name: "精度", max: 10 },
+                            { name: "鲁棒性", max: 10 },
+                        ],
+                        axisName: { color: "#888" },
+                    },
+                    series: [
+                        {
+                            type: "radar",
+                            data: [
+                                {
+                                    value: [5, 5, 8, 7, 7],
+                                    name: "传统RANSAC",
+                                    lineStyle: { color: "#2196f3" },
+                                    areaStyle: {
+                                        color: "rgba(33,150,243,0.12)",
+                                    },
+                                    itemStyle: { color: "#2196f3" },
+                                },
+                                {
+                                    value: [8, 8, 1, 9, 4],
+                                    name: "迭代寻优",
+                                    lineStyle: { color: "#4caf50" },
+                                    areaStyle: {
+                                        color: "rgba(76,175,80,0.12)",
+                                    },
+                                    itemStyle: { color: "#4caf50" },
+                                },
+                                {
+                                    value: [9, 9, 7, 7, 8],
+                                    name: "启发式RANSAC",
+                                    lineStyle: { color: "#ffd200" },
+                                    areaStyle: {
+                                        color: "rgba(255,210,0,0.12)",
+                                    },
+                                    itemStyle: { color: "#ffd200" },
+                                },
+                            ],
+                        },
+                    ],
+                });
+            }
+
+            // ===== Init all charts on load =====
+            function initAllCharts() {
+                initProblemChart();
+                initRansacIterChart();
+                initRansacDetailChart();
+                initGDChart();
+                initHeuristicIdeaChart();
+                initHeuristicJumpChart();
+                initHeuristicDemoChart();
+                initRansacVsChart();
+                initCompareRadarChart();
+            }
+
+            // Lazy init charts when slide becomes visible
+            const chartInits = [
+                [], // slide 0: title
+                [initProblemChart], // slide 1: problem
+                [initRansacIterChart], // slide 2: ransac overview
+                [initRansacDetailChart], // slide 3: ransac math
+                [initGDChart], // slide 4: gradient descent
+                [initHeuristicIdeaChart], // slide 5: heuristic idea
+                [initHeuristicJumpChart], // slide 6: heuristic flow
+                [initHeuristicDemoChart], // slide 7: heuristic demo
+                [initRansacVsChart], // slide 8: ransac vs
+                [initCompareRadarChart], // slide 9: comparison
+                [], // slide 10: suggestions
+            ];
+
+            const chartsInited = new Set();
+
+            const _showSlide = showSlide;
+            showSlide = function (n) {
+                _showSlide(n);
+                const inits = chartInits[currentSlide] || [];
+                inits.forEach((fn) => {
+                    const key = fn.name;
+                    if (!chartsInited.has(key)) {
+                        chartsInited.add(key);
+                        setTimeout(fn, 150);
+                    }
+                });
+            };
+
+            // Init first slide charts
+            initAllCharts();
+            chartsInited.add("initProblemChart");
+            chartsInited.add("initRansacIterChart");
+            chartsInited.add("initRansacDetailChart");
+            chartsInited.add("initGDChart");
+            chartsInited.add("initHeuristicIdeaChart");
+            chartsInited.add("initHeuristicJumpChart");
+            chartsInited.add("initHeuristicDemoChart");
+            chartsInited.add("initRansacVsChart");
+            chartsInited.add("initCompareRadarChart");
+
+            // Render KaTeX formulas
+            renderMathInElement(document.body, {
+                delimiters: [
+                    { left: "$$", right: "$$", display: true },
+                    { left: "$", right: "$", display: false },
+                ],
+                throwOnError: false,
+            });
+        </script>
+    </body>
+</html>

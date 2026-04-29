@@ -74,6 +74,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '任务详情', requiresAuth: true },
   },
   {
+    path: '/error-analysis/smoothed/:taskId',
+    name: 'SmoothedTrajectoryHistory',
+    component: () => import('@/views/SmoothedTrajectoryHistory.vue'),
+    meta: { title: '平滑轨迹详情', requiresAuth: true },
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/Profile.vue'),

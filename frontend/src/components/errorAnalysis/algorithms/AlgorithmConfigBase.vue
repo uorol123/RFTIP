@@ -121,6 +121,15 @@ const emit = defineEmits<{
 const localConfig = ref<Record<string, any>>({ ...props.modelValue })
 const arrayInputs = ref<Record<string, string>>({})
 
+// 初始化数组输入 - 先定义函数
+const updateArrayInputs = () => {
+  for (const [key, value] of Object.entries(localConfig.value)) {
+    if (Array.isArray(value)) {
+      arrayInputs.value[key] = value.join(', ')
+    }
+  }
+}
+
 // 初始化数组输入
 watch(() => props.modelValue, (newValue) => {
   localConfig.value = { ...newValue }
@@ -158,14 +167,6 @@ const configJsonSize = computed(() =>
 // 方法
 const isRequired = (key: string) => {
   return props.configSchema?.required?.includes(key) ?? false
-}
-
-const updateArrayInputs = () => {
-  for (const [key, value] of Object.entries(localConfig.value)) {
-    if (Array.isArray(value)) {
-      arrayInputs.value[key] = value.join(', ')
-    }
-  }
 }
 
 const handleArrayInput = (key: string, event: Event) => {

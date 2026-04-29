@@ -1,8 +1,8 @@
 """
 RANSAC 算法配置模型
 """
-from typing import List
-from pydantic import BaseModel, Field
+from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RansacCostWeights(BaseModel):
@@ -59,7 +59,15 @@ class RansacAlgorithmConfig(BaseModel):
     max_match_groups: int = Field(default=15000, ge=1000, le=100000, description="最大匹配组数")
 
     # ========== 代价函数权重 ==========
-    cost_weights: RansacCostWeights = Field(default_factory=RansacCostWeights, description="代价函数权重")
+    cost_weights: Optional[RansacCostWeights] = Field(default=None, description="代价函数权重")
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_cost_weights(cls, values):
+        """允许 cost_weights 为 null"""
+        if isinstance(values, dict) and values.get('cost_weights') is None:
+            values['cost_weights'] = None
+        return values
 
     class Config:
         use_enum_values = True

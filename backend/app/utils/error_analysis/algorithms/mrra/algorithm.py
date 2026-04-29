@@ -12,7 +12,7 @@ from app.utils.error_analysis.base import (
     ProgressCallback,
 )
 from app.utils.error_analysis.registry import register_algorithm
-from app.utils.error_analysis.algorithms.mrra.config import MrraAlgorithmConfig
+from app.utils.error_analysis.algorithms.mrra.config import MrraAlgorithmConfig, MrraCostWeights
 from app.utils.mrra.track_extractor import TrackExtractor
 from app.utils.mrra.track_interpolator import TrackInterpolator
 from app.utils.mrra.track_matcher import TrackMatcher
@@ -57,6 +57,7 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
 
     def analyze(
         self,
+        task_id: str,
         radar_station_ids: List[int],
         track_ids: List[str],
         db_session: Session,
@@ -66,6 +67,7 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
         执行误差分析
 
         Args:
+            task_id: 任务ID
             radar_station_ids: 雷达站ID列表
             track_ids: 轨迹ID列表
             db_session: 数据库会话
@@ -75,7 +77,6 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
             AnalysisResult: 分析结果
         """
         start_time = datetime.now()
-        task_id = f"{self.ALGORITHM_NAME}_{int(start_time.timestamp())}"
 
         result = AnalysisResult(
             task_id=task_id,
@@ -162,6 +163,9 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
         # 将配置转换为现有MRRA模块需要的格式
         from app.utils.mrra.config import MrraConfig
 
+        # 如果 cost_weights 为 None，使用默认值
+        weights = self.config.cost_weights or MrraCostWeights()
+
         mrra_config = MrraConfig()
         mrra_config.GRID_RESOLUTION = self.config.grid_resolution
         mrra_config.TIME_WINDOW = self.config.time_window
@@ -171,10 +175,10 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
         mrra_config.OPTIMIZATION_STEPS = tuple(self.config.optimization_steps)
         mrra_config.RANGE_OPTIMIZATION_STEPS = tuple(self.config.range_optimization_steps)
         mrra_config.MAX_MATCH_GROUPS = self.config.max_match_groups
-        mrra_config.COST_WEIGHT_VARIANCE = self.config.cost_weights.variance
-        mrra_config.COST_WEIGHT_AZIMUTH_ERROR_SQUARE = self.config.cost_weights.azimuth_error_square
-        mrra_config.COST_WEIGHT_RANGE_ERROR_SQUARE = self.config.cost_weights.range_error_square
-        mrra_config.COST_WEIGHT_ELEVATION_ERROR_SQUARE = self.config.cost_weights.elevation_error_square
+        mrra_config.COST_WEIGHT_VARIANCE = weights.variance
+        mrra_config.COST_WEIGHT_AZIMUTH_ERROR_SQUARE = weights.azimuth_error_square
+        mrra_config.COST_WEIGHT_RANGE_ERROR_SQUARE = weights.range_error_square
+        mrra_config.COST_WEIGHT_ELEVATION_ERROR_SQUARE = weights.elevation_error_square
 
         self.track_extractor = TrackExtractor(mrra_config)
         self.track_interpolator = TrackInterpolator(mrra_config)

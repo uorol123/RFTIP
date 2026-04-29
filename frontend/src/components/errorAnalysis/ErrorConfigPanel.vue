@@ -104,10 +104,14 @@
     <!-- 步骤2: 选择航迹 -->
     <div v-if="currentStep === 2" class="step-content">
       <div class="step-header">
-        <h4 class="section-title">选择航迹</h4>
+        <h4 class="section-title">{{ store.isSingleSourceMode ? '选择目标航迹' : '选择航迹' }}</h4>
         <p class="section-hint">
-          已选择 {{ selectedStationIds.length }} 个雷达站，
-          {{ selectedTrackIds.length }} 条轨迹
+          <template v-if="store.isSingleSourceMode">
+            单站单目标模式：已选择 {{ selectedStationIds.length }} 个雷达站，请选择 1 条目标航迹（1架飞机）
+          </template>
+          <template v-else>
+            已选择 {{ selectedStationIds.length }} 个雷达站，{{ selectedTrackIds.length }} 条轨迹
+          </template>
         </p>
       </div>
 
@@ -493,8 +497,13 @@ function canGoNext(step: number): boolean {
 }
 
 const step2Hint = computed(() => {
-  if (selectedTrackIds.value.length === 0) return '请选择至少 1 条航迹'
-  if (store.isSingleSourceMode) return ''
+  if (selectedTrackIds.value.length === 0) {
+    return store.isSingleSourceMode ? '请选择 1 条目标航迹' : '请选择至少 1 条航迹'
+  }
+  if (store.isSingleSourceMode) {
+    if (selectedTrackIds.value.length > 1) return '单站单目标模式只能选择 1 条航迹'
+    return ''
+  }
   if (involvedStationIds.value.length < 2) return '选中的轨迹至少需要 2 个雷达站观测'
   return ''
 })
@@ -702,8 +711,17 @@ function isTrackSelected(batchId: string): boolean {
 }
 
 function toggleTrack(track: TrackWithStations) {
-  // 单源模式：允许选择任何轨迹
-  if (!store.isSingleSourceMode && track.station_ids.length < 2) return
+  // 单源模式：只允许选择一条轨迹（单站单目标）
+  if (store.isSingleSourceMode) {
+    if (isTrackSelected(track.batch_id)) {
+      selectedTrackIds.value = []
+    } else {
+      selectedTrackIds.value = [track.batch_id]
+    }
+    return
+  }
+  // 多源模式：轨迹必须被至少2个站观测到
+  if (track.station_ids.length < 2) return
   if (isTrackSelected(track.batch_id)) {
     selectedTrackIds.value = selectedTrackIds.value.filter(id => id !== track.batch_id)
   } else {

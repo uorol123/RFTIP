@@ -173,6 +173,7 @@ export interface ErrorAnalysisTask {
   radar_station_ids: string[]  // 雷达站站号（用于显示）
   track_ids: string[]
   user_id: number
+  algorithm_name?: string  // 算法名称
   status: TaskStatus
   progress: number
   error_message?: string
@@ -534,6 +535,35 @@ export interface ProcessStep {
 }
 
 /**
+ * 平滑轨迹点
+ */
+export interface SmoothedTrajectoryPoint {
+  timestamp: string | null
+  longitude: number
+  latitude: number
+  altitude: number | null
+  covariance_trace?: number | null
+}
+
+/**
+ * 平滑轨迹结果
+ */
+export interface SmoothedTrajectoryResult {
+  id: number
+  station_id: number
+  station_name: string
+  batch_id: string
+  original_trajectory: SmoothedTrajectoryPoint[]
+  smoothed_trajectory: SmoothedTrajectoryPoint[]
+  rmse_lat: number | null
+  rmse_lon: number | null
+  rmse_alt: number | null
+  point_count: number
+  process_noise: number | null
+  measurement_noise: number | null
+}
+
+/**
  * 完整任务详情响应
  */
 export interface TaskDetailResponse {
@@ -544,6 +574,7 @@ export interface TaskDetailResponse {
   created_at: string
   started_at: string | null
   completed_at: string | null
+  algorithm_name: string | null
   config: ErrorAnalysisConfig
   radar_station_ids: number[]
   track_ids: string[]
@@ -555,6 +586,7 @@ export interface TaskDetailResponse {
   interpolated_points: InterpolatedPoint[]
   match_groups: MatchGroupDetail[]
   error_results: ErrorResultDetail[]
+  smoothed_trajectories: SmoothedTrajectoryResult[]
   processing_time_seconds: number
   total_segments: number
   total_match_groups: number

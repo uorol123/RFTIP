@@ -21,7 +21,7 @@ from app.utils.error_analysis.base import (
     AnalysisResult,
     ProgressCallback,
 )
-from app.utils.error_analysis.algorithms.weighted_lstsq.config import WeightedLstsqAlgorithmConfig
+from app.utils.error_analysis.algorithms.weighted_lstsq.config import WeightedLstsqAlgorithmConfig, WeightedLstsqCostWeights
 from app.utils.mrra.config import MrraConfig
 from app.utils.mrra.track_extractor import load_track_points_by_track_ids, extract_key_tracks
 from app.utils.mrra.track_interpolator import interpolate_and_save_tracks
@@ -61,13 +61,13 @@ class WeightedLstsqAlgorithm(BaseErrorAnalysisAlgorithm):
 
     def analyze(
         self,
+        task_id: str,
         radar_station_ids: List[int],
         track_ids: List[str],
         db_session: Session,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> AnalysisResult:
         start_time = datetime.now()
-        task_id = f"{self.ALGORITHM_NAME}_{int(start_time.timestamp())}"
 
         result = AnalysisResult(
             task_id=task_id,
@@ -193,6 +193,8 @@ class WeightedLstsqAlgorithm(BaseErrorAnalysisAlgorithm):
             return result
 
     def _build_mrra_config(self) -> MrraConfig:
+        # 如果 cost_weights 为 None，使用默认值
+        weights = self.config.cost_weights or WeightedLstsqCostWeights()
         return MrraConfig(
             grid_resolution=self.config.grid_resolution,
             time_window=self.config.time_window,
@@ -203,10 +205,10 @@ class WeightedLstsqAlgorithm(BaseErrorAnalysisAlgorithm):
             range_optimization_steps=self.config.range_optimization_steps,
             max_match_groups=self.config.max_match_groups,
             cost_weights={
-                "variance": self.config.cost_weights.variance,
-                "azimuth_error_square": self.config.cost_weights.azimuth_error_square,
-                "range_error_square": self.config.cost_weights.range_error_square,
-                "elevation_error_square": self.config.cost_weights.elevation_error_square,
+                "variance": weights.variance,
+                "azimuth_error_square": weights.azimuth_error_square,
+                "range_error_square": weights.range_error_square,
+                "elevation_error_square": weights.elevation_error_square,
             },
         )
 
