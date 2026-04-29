@@ -25,29 +25,29 @@
 
 ```
 backend/
-├── app/                          # Main application package
+├── app/                          # 应用主目录
 │   ├── __init__.py
-│   ├── models/                   # SQLAlchemy models
+│   ├── models/                   # SQLAlchemy 数据模型
 │   │   └── __init__.py
-│   ├── routers/                  # API endpoints (FastAPI routers)
+│   ├── routers/                  # API 路由端点
 │   │   ├── __init__.py
-│   │   ├── auth.py              # Authentication endpoints
-│   │   └── health.py            # Health check endpoints
-│   ├── schemas/                  # Pydantic models for request/response
+│   │   ├── auth.py              # 认证相关接口
+│   │   └── health.py            # 健康检查接口
+│   ├── schemas/                  # Pydantic 请求/响应模型
 │   │   └── __init__.py
-│   └── services/                 # Business logic
+│   └── services/                 # 业务逻辑层
 │       └── __init__.py
-├── core/                         # Core configuration and utilities
+├── core/                         # 核心配置与工具
 │   ├── __init__.py
-│   ├── config.py                # Pydantic settings
-│   └── database.py              # Database session and engine
-├── migrations/                   # Alembic migration files
-├── tests/                        # Test files
-├── .env                         # Environment variables (not committed)
-├── .env.example                 # Example environment variables
-├── alembic.ini                  # Alembic configuration
-├── main.py                      # Application entry point
-├── requirements.txt             # Python dependencies
+│   ├── config.py                # Pydantic 配置
+│   └── database.py              # 数据库连接与会话
+├── migrations/                   # Alembic 数据库迁移文件
+├── tests/                        # 测试文件
+├── .env                         # 环境变量（不提交）
+├── .env.example                 # 环境变量示例
+├── alembic.ini                  # Alembic 配置
+├── main.py                      # 应用入口
+├── requirements.txt             # Python 依赖
 └── README.md                    # 本文档
 ```
 
@@ -99,7 +99,7 @@ backend/
 ## 快速开始
 
 > **推荐方式：使用 Docker 部署依赖服务**
-> 项目依赖 MySQL、Redis、MinIO 等服务，建议使用 Docker 快速搭建环境。详细说明请参考 [Docker 部署指南](./docs/docker-deploy-guide.md)。
+> 项目依赖 MySQL、Redis、MinIO 等服务，建议使用 Docker 快速搭建环境，详见下方各服务的 Docker 部署命令。
 
 ---
 
@@ -431,7 +431,7 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 配置文件位于 `.env` 文件中，在项目一级目录，仓库提供一个示例文件 `.env.example`
 
 ### 配置参考
-该项目使用了mysql，redis，minio等第三方工具，建议使用docker进行环境搭建，可以参考docs/docker-deploy-guide.md
+该项目使用了mysql，redis，minio等第三方工具，建议使用docker进行环境搭建，详见上方各服务的 Docker 部署命令。
 
 ### 邮箱配置说明
 根据你使用的邮箱，按以下步骤获取授权码：
