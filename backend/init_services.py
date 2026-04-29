@@ -185,7 +185,6 @@ def init_directories():
 
     directories = [
         "logs",          # 日志目录
-        "uploads",       # 上传文件临时目录
         "exports",       # 导出文件目录
     ]
 
