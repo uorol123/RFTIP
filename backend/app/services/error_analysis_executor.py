@@ -32,7 +32,10 @@ SINGLE_SOURCE_ALGORITHMS = ("kalman", "particle_filter", "spline")
 def execute_analysis(db: Session, task: ErrorAnalysisTask) -> None:
     """执行误差分析任务"""
     task_id = task.task_id
-    algorithm_name = task.algorithm_name or "gradient_descent"
+    algorithm_name = task.algorithm_name or "mrra"
+    # 兼容旧名称
+    if algorithm_name == "gradient_descent":
+        algorithm_name = "mrra"
 
     try:
         task.status = ErrorAnalysisTaskStatus.EXTRACTING
@@ -46,7 +49,7 @@ def execute_analysis(db: Session, task: ErrorAnalysisTask) -> None:
 
         logger.info(f"使用算法 {algorithm_name} 执行任务 {task_id}")
 
-        if algorithm_name in ("ransac", "ransac_heuristic", "weighted_lstsq", "kalman", "particle_filter", "spline"):
+        if algorithm_name in ("mrra", "ransac", "ransac_heuristic", "weighted_lstsq", "kalman", "particle_filter", "spline"):
             _execute_with_algorithm_interface(db, task, algorithm)
         else:
             _execute_with_legacy_flow(db, task, algorithm)
