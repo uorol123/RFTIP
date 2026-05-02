@@ -61,11 +61,28 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Analysis.vue'),
     meta: { title: 'AI Analysis' },
   },
+  // 误差分析 - 新路由结构
   {
     path: '/error-analysis',
-    name: 'ErrorAnalysis',
-    component: () => import('@/views/ErrorAnalysis.vue'),
-    meta: { title: '误差分析' },
+    redirect: '/error-analysis/multi-source',
+  },
+  {
+    path: '/error-analysis/multi-source',
+    name: 'MultiSourceAnalysis',
+    component: () => import('@/views/MultiSourceAnalysis.vue'),
+    meta: { title: '多源参考分析' },
+  },
+  {
+    path: '/error-analysis/single-source',
+    name: 'SingleSourceAnalysis',
+    component: () => import('@/views/SingleSourceAnalysis.vue'),
+    meta: { title: '单源盲测分析' },
+  },
+  {
+    path: '/error-analysis/tasks',
+    name: 'TaskManagement',
+    component: () => import('@/views/TaskManagement.vue'),
+    meta: { title: '任务管理', requiresAuth: true },
   },
   {
     path: '/error-analysis/history/:taskId',

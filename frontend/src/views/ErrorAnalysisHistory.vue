@@ -456,7 +456,7 @@ function getStepData(stepIndex: number): Record<string, unknown> {
 }
 
 function goBack() {
-  router.push('/error-analysis')
+  router.push('/error-analysis/tasks')
 }
 
 async function loadData() {
