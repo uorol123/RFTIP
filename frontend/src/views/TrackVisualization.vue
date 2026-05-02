@@ -206,7 +206,6 @@ const loadFiles = async () => {
 const selectFile = (file: FileItem) => {
   selectedFileId.value = file.id
   // TODO: 加载该文件的轨迹数据进行可视化
-  console.log('选择文件:', file.filename)
 }
 
 // 导航到数据管理页面上传文件

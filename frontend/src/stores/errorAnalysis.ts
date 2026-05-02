@@ -275,7 +275,6 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
   function applyPreset(preset: PresetProfile) {
     const presetConfig = PRESET_PROFILES[preset]
     console.log('[Store] applyPreset called with:', preset)
-    console.log('[Store] presetConfig:', JSON.stringify(presetConfig))
     if (presetConfig) {
       // 创建新对象并替换，确保触发响应式更新
       const newConfig = {
@@ -288,9 +287,7 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
         cost_weights: { ...presetConfig.cost_weights },
         max_match_groups: presetConfig.max_match_groups,
       }
-      console.log('[Store] newConfig to apply:', JSON.stringify(newConfig))
       config.value = newConfig
-      console.log('[Store] config.value after assignment:', JSON.stringify(config.value))
     }
   }
 

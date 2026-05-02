@@ -25,8 +25,8 @@
       </div>
 
       <div class="mode-switch">
-        <router-link to="/error-analysis/multi-source" class="mode-tab">多源参考</router-link>
-        <router-link to="/error-analysis/single-source" class="mode-tab active">单源盲测</router-link>
+        <router-link to="/error-analysis/multi-source" class="mode-tab" active-class="active">多源参考</router-link>
+        <router-link to="/error-analysis/single-source" class="mode-tab" active-class="active">单源盲测</router-link>
       </div>
 
       <div class="main-content">
@@ -86,8 +86,9 @@
 </template>
 
 <script setup lang="ts">
-import { onUnmounted } from 'vue'
+import { watch, onUnmounted } from 'vue'
 import { useErrorAnalysisStore } from '@/stores/errorAnalysis'
+import { useAppStore } from '@/stores/app'
 import EmptyState from '@/components/EmptyState.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import ErrorConfigPanel from '@/components/errorAnalysis/ErrorConfigPanel.vue'
@@ -95,6 +96,7 @@ import ErrorProgressBar from '@/components/errorAnalysis/ErrorProgressBar.vue'
 import SmoothedTrajectoryView from '@/components/errorAnalysis/SmoothedTrajectoryView.vue'
 
 const store = useErrorAnalysisStore()
+const appStore = useAppStore()
 
 function handleAnalysisStart() {
   // no-op, results render automatically when completed
@@ -103,6 +105,16 @@ function handleAnalysisStart() {
 function handleRetry() {
   store.clearCurrentTask()
 }
+
+watch(() => store.isTaskCompleted, async (completed) => {
+  if (completed && store.currentTask) {
+    try {
+      await store.loadTaskDetailFull(store.currentTask.task_id, true, false)
+    } catch (e: any) {
+      appStore.error(e.message || '加载任务详情失败')
+    }
+  }
+})
 
 onUnmounted(() => {
   store.stopPolling()

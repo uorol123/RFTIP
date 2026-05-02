@@ -25,8 +25,8 @@
       </div>
 
       <div class="mode-switch">
-        <router-link to="/error-analysis/multi-source" class="mode-tab active">多源参考</router-link>
-        <router-link to="/error-analysis/single-source" class="mode-tab">单源盲测</router-link>
+        <router-link to="/error-analysis/multi-source" class="mode-tab" active-class="active">多源参考</router-link>
+        <router-link to="/error-analysis/single-source" class="mode-tab" active-class="active">单源盲测</router-link>
       </div>
 
       <div class="main-content">
