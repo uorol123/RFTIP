@@ -1,6 +1,5 @@
 """
-误差分析算法配置模块
-算法名称：基于梯度下降的迭代寻优算法
+MRRA 预处理配置模块
 
 使用 Pydantic BaseModel 管理所有算法配置参数
 """
@@ -18,7 +17,7 @@ class CostWeights(BaseModel):
 
 class MrraConfig(BaseModel):
     """
-    误差分析算法配置（基于梯度下降的迭代寻优算法）
+    MRRA 预处理配置
 
     包含所有可配置的算法参数
     """

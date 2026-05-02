@@ -69,7 +69,7 @@ class ErrorAnalysisRequest(BaseModel):
     track_ids: List[str] = Field(..., min_length=1, description="轨迹编号列表（如 '100081'）")
     start_time: Optional[datetime] = Field(default=None, description="分析开始时间")
     end_time: Optional[datetime] = Field(default=None, description="分析结束时间")
-    algorithm: str = Field(default="gradient_descent", description="算法名称（如：gradient_descent）")
+    algorithm: str = Field(default="mrra", description="算法名称（如：mrra）")
     config: Optional[ErrorAnalysisConfig] = Field(default=None, description="分析配置参数")
 
 

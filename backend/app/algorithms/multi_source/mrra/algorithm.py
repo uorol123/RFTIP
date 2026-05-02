@@ -1,7 +1,10 @@
 """
-MRRA 算法适配器
+MRRA 算法实现（坐标下降迭代寻优）
 
-将现有的MRRA模块适配到新的算法架构
+算法流程：
+1. 复用预处理模块的航迹提取、插值、匹配流程获取匹配组
+2. 使用坐标下降法依次优化方位角、距离、俯仰角误差
+3. 输出各雷达站的系统误差
 """
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -11,13 +14,13 @@ from app.algorithms.base import (
     AnalysisResult,
     ProgressCallback,
 )
-from app.algorithms.registry import register_algorithm
 from app.algorithms.multi_source.mrra.config import MrraAlgorithmConfig, MrraCostWeights
-from app.algorithms.multi_source.preprocessing.track_extractor import TrackExtractor
-from app.algorithms.multi_source.preprocessing.track_interpolator import TrackInterpolator
-from app.algorithms.multi_source.preprocessing.track_matcher import TrackMatcher
+from app.algorithms.multi_source.preprocessing.config import MrraConfig, CostWeights
+from app.algorithms.multi_source.preprocessing.track_extractor import load_track_points_by_track_ids, extract_key_tracks
+from app.algorithms.multi_source.preprocessing.track_interpolator import interpolate_and_save_tracks
+from app.algorithms.multi_source.preprocessing.track_matcher import match_tracks_from_database, save_matched_groups
 from app.algorithms.multi_source.preprocessing.error_calculator import ErrorCalculator
-from app.models.flight_track import RadarStation
+from app.models.flight_track import RadarStation, FlightTrackRaw
 from sqlalchemy.orm import Session
 from core.logging import get_logger
 
@@ -26,34 +29,27 @@ logger = get_logger(__name__)
 
 class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
     """
-    MRRA 算法
-    基于梯度下降的迭代寻优算法
+    MRRA 算法（Multi-Radar Reference Analysis）
+
+    使用坐标下降法，依次优化各雷达站的方位角、距离、俯仰角系统误差。
     """
 
-    ALGORITHM_NAME = "gradient_descent"
+    ALGORITHM_NAME = "mrra"
     ALGORITHM_VERSION = "1.0.0"
-    ALGORITHM_DISPLAY_NAME = "基于梯度下降的迭代寻优算法"
+    ALGORITHM_DISPLAY_NAME = "MRRA 坐标下降迭代寻优"
     ALGORITHM_DESCRIPTION = (
-        "通过航迹匹配和梯度下降优化，"
-        "计算雷达系统的方位角、距离和俯仰角误差。"
+        "通过航迹匹配和坐标下降迭代寻优，"
+        "依次计算各雷达站的方位角、距离和俯仰角系统误差。"
     )
 
-    # 配置类（用于工厂创建）
     ConfigClass = MrraAlgorithmConfig
 
     def __init__(self, config: MrraAlgorithmConfig):
         super().__init__(config)
-        # 使用现有的MRRA模块组件
-        self.track_extractor = None
-        self.track_interpolator = None
-        self.track_matcher = None
-        self.error_calculator = None
 
     def _validate_config(self):
-        """验证配置（Pydantic自动验证）"""
-        # MrraAlgorithmConfig 使用 Pydantic，已自动验证
         if not isinstance(self.config, MrraAlgorithmConfig):
-            raise ValueError(f"配置必须是 MrraAlgorithmConfig 类型")
+            raise ValueError("配置必须是 MrraAlgorithmConfig 类型")
 
     def analyze(
         self,
@@ -61,21 +57,8 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
         radar_station_ids: List[int],
         track_ids: List[str],
         db_session: Session,
-        progress_callback: Optional[ProgressCallback] = None
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> AnalysisResult:
-        """
-        执行误差分析
-
-        Args:
-            task_id: 任务ID
-            radar_station_ids: 雷达站ID列表
-            track_ids: 轨迹ID列表
-            db_session: 数据库会话
-            progress_callback: 进度回调
-
-        Returns:
-            AnalysisResult: 分析结果
-        """
         start_time = datetime.now()
 
         result = AnalysisResult(
@@ -94,46 +77,87 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
             ).all()
 
             radar_positions = {
-                station.station_id: (station.longitude, station.latitude, station.altitude)
+                station.id: (station.longitude, station.latitude, station.altitude or 0.0)
                 for station in radar_stations
             }
 
-            # 初始化组件
-            self._init_components(radar_positions)
+            if not radar_positions:
+                raise ValueError("没有找到指定的雷达站位置信息")
 
-            # 步骤1: 提取航迹
+            # 构建预处理配置
+            mrra_config = self._build_mrra_config()
+
+            # 步骤1: 加载并提取航迹
             if progress_callback:
-                progress_callback.on_progress(0.1, "提取航迹")
+                progress_callback.on_progress(0.1, "加载并提取航迹")
+            self._update_task_progress(db_session, task_id, 10, "加载并提取航迹")
 
-            logger.info(f"[{task_id}] 开始提取航迹...")
-            key_tracks = self._extract_tracks(db_session, track_ids, radar_positions)
-            result.progress = 0.25
+            station_data = load_track_points_by_track_ids(
+                db_session, track_ids, radar_positions
+            )
+            if not station_data:
+                raise ValueError("没有找到有效的航迹数据")
 
-            # 步骤2: 航迹插值
+            key_tracks = extract_key_tracks(station_data, mrra_config)
+            if not key_tracks:
+                raise ValueError("没有提取到关键航迹")
+
+            result.progress = 0.3
+
+            # 步骤2: 插值
             if progress_callback:
-                progress_callback.on_progress(0.25, "航迹插值")
+                progress_callback.on_progress(0.3, "航迹插值")
+            self._update_task_progress(db_session, task_id, 40, "航迹插值")
 
-            logger.info(f"[{task_id}] 开始航迹插值...")
-            segments = self._interpolate_tracks(db_session, task_id, key_tracks)
+            first_track = db_session.query(FlightTrackRaw).filter(
+                FlightTrackRaw.batch_id.in_(track_ids)
+            ).order_by(FlightTrackRaw.timestamp).first()
+            reference_time = (
+                first_track.timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+                if first_track
+                else datetime.utcnow()
+            )
+
+            interpolate_and_save_tracks(
+                db_session, task_id, key_tracks, mrra_config, reference_time
+            )
+
             result.progress = 0.5
 
-            # 步骤3: 航迹匹配
+            # 步骤3: 匹配
             if progress_callback:
                 progress_callback.on_progress(0.5, "航迹匹配")
+            self._update_task_progress(db_session, task_id, 60, "航迹匹配")
 
-            logger.info(f"[{task_id}] 开始航迹匹配...")
-            matched_groups = self._match_tracks(db_session, task_id)
-            result.progress = 0.75
+            matched_groups = match_tracks_from_database(
+                db_session, task_id, mrra_config
+            )
+            if not matched_groups:
+                raise ValueError("没有匹配到航迹组")
+
+            save_matched_groups(db_session, task_id, matched_groups, reference_time)
+
+            result.progress = 0.7
 
             # 步骤4: 计算误差
             if progress_callback:
-                progress_callback.on_progress(0.75, "计算误差")
+                progress_callback.on_progress(0.7, "计算系统误差")
+            self._update_task_progress(db_session, task_id, 80, "误差计算中")
 
-            logger.info(f"[{task_id}] 开始计算误差...")
-            errors = self._calculate_errors(matched_groups, radar_positions)
+            error_calc = ErrorCalculator(mrra_config)
+            station_errors = error_calc.calculate_radar_errors(matched_groups, radar_positions)
+
+            errors = {}
+            for sid, (az_err, range_err, elev_err) in station_errors.items():
+                errors[sid] = {
+                    "azimuth_error": az_err,
+                    "range_error": range_err,
+                    "elevation_error": elev_err,
+                }
+
             result.progress = 1.0
 
-            # 完成结果
+            # 完成
             result.status = "completed"
             result.errors = errors
             result.completed_at = datetime.now()
@@ -141,16 +165,20 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
                 result.completed_at - start_time
             ).total_seconds()
             result.match_statistics = {
-                "total_segments": len(segments),
                 "total_match_groups": len(matched_groups),
             }
+            result.metadata = {
+                "algorithm": "mrra",
+            }
 
-            logger.info(f"[{task_id}] 分析完成，耗时 {result.processing_time_seconds:.2f} 秒")
+            logger.info(
+                f"[{task_id}] MRRA 分析完成，耗时 {result.processing_time_seconds:.2f} 秒"
+            )
 
             return result
 
         except Exception as e:
-            logger.error(f"[{task_id}] 分析失败: {str(e)}", exc_info=True)
+            logger.error(f"[{task_id}] MRRA 分析失败: {str(e)}", exc_info=True)
             result.status = "failed"
             result.error_message = str(e)
             result.completed_at = datetime.now()
@@ -158,90 +186,54 @@ class MrraAlgorithm(BaseErrorAnalysisAlgorithm):
                 progress_callback.on_error(str(e))
             return result
 
-    def _init_components(self, radar_positions: Dict[int, tuple]):
-        """初始化MRRA组件"""
-        # 将配置转换为现有MRRA模块需要的格式
-        from app.algorithms.multi_source.preprocessing.config import MrraConfig
-
-        # 如果 cost_weights 为 None，使用默认值
+    def _build_mrra_config(self) -> MrraConfig:
+        """将算法配置转换为预处理模块的 MrraConfig"""
         weights = self.config.cost_weights or MrraCostWeights()
-
-        mrra_config = MrraConfig()
-        mrra_config.GRID_RESOLUTION = self.config.grid_resolution
-        mrra_config.TIME_WINDOW = self.config.time_window
-        mrra_config.TIME_WINDOW_RATIO = self.config.time_window_ratio
-        mrra_config.MATCH_DISTANCE_THRESHOLD = self.config.match_distance_threshold
-        mrra_config.MIN_TRACK_POINTS = self.config.min_track_points
-        mrra_config.OPTIMIZATION_STEPS = tuple(self.config.optimization_steps)
-        mrra_config.RANGE_OPTIMIZATION_STEPS = tuple(self.config.range_optimization_steps)
-        mrra_config.MAX_MATCH_GROUPS = self.config.max_match_groups
-        mrra_config.COST_WEIGHT_VARIANCE = weights.variance
-        mrra_config.COST_WEIGHT_AZIMUTH_ERROR_SQUARE = weights.azimuth_error_square
-        mrra_config.COST_WEIGHT_RANGE_ERROR_SQUARE = weights.range_error_square
-        mrra_config.COST_WEIGHT_ELEVATION_ERROR_SQUARE = weights.elevation_error_square
-
-        self.track_extractor = TrackExtractor(mrra_config)
-        self.track_interpolator = TrackInterpolator(mrra_config)
-        self.track_matcher = TrackMatcher(mrra_config)
-        self.error_calculator = ErrorCalculator(mrra_config)
-
-    def _extract_tracks(self, db, track_ids, radar_positions):
-        """提取航迹"""
-        from app.services.error_analysis_service import load_track_points_by_track_ids
-
-        station_data = load_track_points_by_track_ids(db, track_ids, radar_positions)
-
-        # 使用TrackExtractor提取关键航迹
-        return self.track_extractor.extract_all(station_data)
-
-    def _interpolate_tracks(self, db, task_id, key_tracks):
-        """插值航迹"""
-        from app.services.error_analysis_service import interpolate_and_save_tracks
-
-        return interpolate_and_save_tracks(db, task_id, key_tracks, self.track_interpolator.config)
-
-    def _match_tracks(self, db, task_id):
-        """匹配航迹"""
-        from app.services.error_analysis_service import match_tracks_from_database
-
-        return match_tracks_from_database(db, task_id, self.track_matcher.config)
-
-    def _calculate_errors(self, matched_groups, radar_positions):
-        """计算误差"""
-        # 调用ErrorCalculator
-        opt_az, opt_r, opt_elev = self.error_calculator.optimize_station_errors_separately(
-            matched_groups,
-            {sid: 0.0 for sid in radar_positions.keys()},
-            radar_positions
+        cost_weights = CostWeights(
+            variance=weights.variance,
+            azimuth_error_square=weights.azimuth_error_square,
+            range_error_square=weights.range_error_square,
+            elevation_error_square=weights.elevation_error_square,
+        )
+        return MrraConfig(
+            grid_resolution=self.config.grid_resolution,
+            time_window=self.config.time_window,
+            time_window_ratio=self.config.time_window_ratio,
+            match_distance_threshold=self.config.match_distance_threshold,
+            min_track_points=self.config.min_track_points,
+            optimization_steps=self.config.optimization_steps,
+            range_optimization_steps=self.config.range_optimization_steps,
+            max_match_groups=self.config.max_match_groups,
+            cost_weights=cost_weights,
         )
 
-        # 格式化结果
-        errors = {}
-        for sid in radar_positions.keys():
-            errors[sid] = {
-                "azimuth_error": opt_az.get(sid, 0.0),
-                "range_error": opt_r.get(sid, 0.0),
-                "elevation_error": opt_elev.get(sid, 0.0),
-            }
-
-        return errors
+    def _update_task_progress(
+        self, db: Session, task_id: str, progress: int, message: str
+    ):
+        """更新数据库中任务的进度"""
+        try:
+            from app.models.error_analysis import ErrorAnalysisTask
+            task = db.query(ErrorAnalysisTask).filter(
+                ErrorAnalysisTask.task_id == task_id
+            ).first()
+            if task:
+                task.progress = progress
+                db.commit()
+        except Exception:
+            pass
 
     @staticmethod
     def get_default_config() -> MrraAlgorithmConfig:
-        """获取默认配置"""
         return MrraAlgorithmConfig()
 
     @staticmethod
     def get_config_class():
-        """获取配置类"""
         return MrraAlgorithmConfig
 
     def get_config_schema(self) -> Dict[str, Any]:
-        """获取配置 JSON Schema"""
         return MrraAlgorithmConfig.model_json_schema()
 
     def get_config_preset_profiles(self) -> Dict[str, MrraAlgorithmConfig]:
-        """获取预设配置"""
         return {
             "standard": MrraAlgorithmConfig(),
             "high_precision": MrraAlgorithmConfig(

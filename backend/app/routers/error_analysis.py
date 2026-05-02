@@ -616,7 +616,7 @@ async def get_algorithm_info(
     """
     获取指定算法的详细信息
 
-    - **algorithm_name**: 算法名称（如：gradient_descent）
+    - **algorithm_name**: 算法名称（如：mrra）
     """
     info = AlgorithmFactory.get_algorithm_info(algorithm_name)
     if info is None:
