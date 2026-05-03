@@ -135,12 +135,18 @@ import { useErrorAnalysisStore } from '@/stores/errorAnalysis'
 import { algorithmsApi } from '@/api/errorAnalysis/algorithms'
 import type { AlgorithmInfo, AlgorithmConfigSchema } from '@/types/errorAnalysis/algorithms'
 
+type AlgorithmMode = 'all' | 'multi_source' | 'single_source'
+
+const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline']
+
 interface Props {
   disabled?: boolean
+  mode?: AlgorithmMode
 }
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
+  mode: 'all',
 })
 
 const emit = defineEmits<{
@@ -157,8 +163,16 @@ const localConfig = ref<Record<string, any>>({})
 const arrayInputs = ref<Record<string, string>>({})
 const loading = ref(false)
 
-// 计算属性
-const algorithms = computed(() => store.availableAlgorithms)
+const algorithms = computed(() => {
+  const all = store.availableAlgorithms
+  if (props.mode === 'multi_source') {
+    return all.filter(a => !SINGLE_SOURCE_ALGORITHMS.includes(a.name))
+  }
+  if (props.mode === 'single_source') {
+    return all.filter(a => SINGLE_SOURCE_ALGORITHMS.includes(a.name))
+  }
+  return all
+})
 const selectedAlgorithmInfo = computed(() =>
   algorithms.value.find(a => a.name === localSelectedAlgorithm.value)
 )

@@ -27,6 +27,7 @@
     <div v-if="currentStep === 0" class="step-content">
       <AlgorithmSelector
         :disabled="store.isTaskRunning"
+        :mode="algorithmMode"
         @update:algorithm="handleAlgorithmChange"
         @update:config="handleAlgorithmConfigChange"
       />
@@ -466,6 +467,18 @@ interface TrackWithStations extends TrackInfo {
   station_ids: number[]
 }
 
+interface Props {
+  algorithmMode?: 'all' | 'multi_source' | 'single_source'
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  algorithmMode: 'all',
+})
+
+const emit = defineEmits<{
+  start: []
+}>()
+
 const store = useErrorAnalysisStore()
 const appStore = useAppStore()
 
@@ -801,6 +814,7 @@ async function handleStartAnalysis() {
 
     await store.createAnalysis()
     appStore.success('分析任务已创建')
+    emit('start')
   } catch (error: any) {
     appStore.error(error.message || '创建分析任务失败')
   }

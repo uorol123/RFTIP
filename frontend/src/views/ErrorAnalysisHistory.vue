@@ -393,7 +393,7 @@ const singleSourceTabs = [
 
 // 根据模式获取标签页
 const tabs = computed(() => {
-  return isSingleSourceMode.value ? singleSourceTabs.value : multiSourceTabs
+  return isSingleSourceMode.value ? singleSourceTabs : multiSourceTabs
 })
 
 const statusInfo = computed(() => {
@@ -456,7 +456,7 @@ function getStepData(stepIndex: number): Record<string, unknown> {
 }
 
 function goBack() {
-  router.push('/error-analysis')
+  router.push('/error-analysis/tasks')
 }
 
 async function loadData() {
