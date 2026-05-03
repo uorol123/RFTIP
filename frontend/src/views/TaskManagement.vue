@@ -177,9 +177,8 @@ import { useRouter } from 'vue-router'
 import { useErrorAnalysisStore } from '@/stores/errorAnalysis'
 import { useAppStore } from '@/stores/app'
 import type { ErrorAnalysisTask } from '@/types/errorAnalysis'
+import { SINGLE_SOURCE_ALGORITHMS } from '@/types/errorAnalysis'
 import AppHeader from '@/components/AppHeader.vue'
-
-const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline']
 
 const router = useRouter()
 const store = useErrorAnalysisStore()

@@ -5,6 +5,10 @@
  * 与后端 API 模型对应 - 新版工作流
  */
 
+// ========== 算法模式常量 ==========
+
+export const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline'] as const
+
 // ========== 代价函数权重 ==========
 
 /**

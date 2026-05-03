@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
-
-const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline']
+import { SINGLE_SOURCE_ALGORITHMS } from '@/types/errorAnalysis'
 
 function isSingleSourceAlgorithm(name?: string): boolean {
   return !!name && SINGLE_SOURCE_ALGORITHMS.includes(name)
