@@ -38,7 +38,7 @@
         </div>
 
         <div class="content-panel-wrapper">
-          <div v-if="store.currentTask" class="progress-section">
+          <div v-if="store.currentTask && !store.isTaskCompleted && !store.isTaskFailed" class="progress-section">
             <ErrorProgressBar
               :status="store.currentTask.status"
               :progress="store.taskProgress"

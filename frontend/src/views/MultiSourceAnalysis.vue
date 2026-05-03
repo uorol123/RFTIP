@@ -38,7 +38,7 @@
         </div>
 
         <div class="content-panel-wrapper">
-          <div v-if="store.currentTask" class="progress-section">
+          <div v-if="store.currentTask && !store.isTaskCompleted && !store.isTaskFailed" class="progress-section">
             <ErrorProgressBar
               :status="store.currentTask.status"
               :progress="store.taskProgress"
@@ -122,7 +122,6 @@
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
 import { useErrorAnalysisStore } from '@/stores/errorAnalysis'
-import { useAppStore } from '@/stores/app'
 import EmptyState from '@/components/EmptyState.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import ErrorConfigPanel from '@/components/errorAnalysis/ErrorConfigPanel.vue'
@@ -132,7 +131,6 @@ import ErrorTable from '@/components/errorAnalysis/ErrorTable.vue'
 import MatchVisualization from '@/components/errorAnalysis/MatchVisualization.vue'
 
 const store = useErrorAnalysisStore()
-const appStore = useAppStore()
 
 const activeTab = ref<'chart' | 'table' | 'matches'>('chart')
 

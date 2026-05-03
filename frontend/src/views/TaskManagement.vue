@@ -36,7 +36,7 @@
         </div>
         <div class="filter-group">
           <label class="filter-label">任务状态</label>
-          <select v-model="filterStatus" class="filter-select" @change="loadTasks">
+          <select v-model="filterStatus" class="filter-select" @change="currentPage = 1; loadTasks()">
             <option value="">全部</option>
             <option value="pending">等待中</option>
             <option value="extracting">提取航迹</option>
