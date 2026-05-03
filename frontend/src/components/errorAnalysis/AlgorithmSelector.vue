@@ -134,10 +134,9 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useErrorAnalysisStore } from '@/stores/errorAnalysis'
 import { algorithmsApi } from '@/api/errorAnalysis/algorithms'
 import type { AlgorithmInfo, AlgorithmConfigSchema } from '@/types/errorAnalysis/algorithms'
+import { SINGLE_SOURCE_ALGORITHMS } from '@/types/errorAnalysis'
 
 type AlgorithmMode = 'all' | 'multi_source' | 'single_source'
-
-const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline']
 
 interface Props {
   disabled?: boolean

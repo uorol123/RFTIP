@@ -32,7 +32,7 @@ import {
   type MatchGroupParams,
 } from '@/api/errorAnalysis'
 import { algorithmsApi } from '@/api/errorAnalysis/algorithms'
-import { DEFAULT_ERROR_ANALYSIS_CONFIG, PRESET_PROFILES } from '@/types/errorAnalysis'
+import { DEFAULT_ERROR_ANALYSIS_CONFIG, PRESET_PROFILES, SINGLE_SOURCE_ALGORITHMS } from '@/types/errorAnalysis'
 
 export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
   // ========== 状态 ==========
@@ -145,7 +145,7 @@ export const useErrorAnalysisStore = defineStore('errorAnalysis', () => {
   // 算法模式: 'multi_source' (多源参考) 或 'single_source' (单源盲测)
   const algorithmMode = computed(() => {
     const name = selectedAlgorithm.value?.name || ''
-    if (['kalman', 'particle_filter', 'spline'].includes(name)) {
+    if (SINGLE_SOURCE_ALGORITHMS.includes(name)) {
       return 'single_source'
     }
     return 'multi_source'

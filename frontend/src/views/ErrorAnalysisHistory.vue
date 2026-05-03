@@ -351,7 +351,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useErrorAnalysisStore } from '@/stores/errorAnalysis'
 import { useAppStore } from '@/stores/app'
-import { TASK_STATUS_INFO } from '@/types/errorAnalysis'
+import { TASK_STATUS_INFO, SINGLE_SOURCE_ALGORITHMS } from '@/types/errorAnalysis'
 import SegmentDetailView from '@/components/errorAnalysis/SegmentDetailView.vue'
 import InterpolationView from '@/components/errorAnalysis/InterpolationView.vue'
 import MatchGroupDetailView from '@/components/errorAnalysis/MatchGroupDetailView.vue'
@@ -367,9 +367,6 @@ const activeTab = ref('segments')
 const activeStep = ref(-1)
 const expandedStep = ref(-1)
 const error = ref<string | null>(null)
-
-// 单源盲测算法列表
-const SINGLE_SOURCE_ALGORITHMS = ['kalman', 'particle_filter', 'spline']
 
 // 判断是否为单源盲测模式
 const isSingleSourceMode = computed(() => {
