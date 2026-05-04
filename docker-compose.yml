@@ -52,6 +52,37 @@ services:
       timeout: 3s
       retries: 5
 
+  backend:
+    build: ./backend
+    container_name: rftip-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-rftip123}@mysql:3306/${MYSQL_DATABASE:-rftip_db}
+      MINIO_ENDPOINT: minio:9000
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - rftip
+
+  frontend:
+    build: ./frontend
+    container_name: rftip-frontend
+    ports:
+      - "8888:80"
+    depends_on:
+      - backend
+    networks:
+      - rftip
+
 volumes:
   mysql_data:
   redis_data:
