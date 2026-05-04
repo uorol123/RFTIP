@@ -109,24 +109,36 @@ backend/
 
 ---
 
-### 一、依赖服务部署（Docker Compose 一键启动）
+### 一、Docker Compose 全栈部署（推荐）
 
-项目依赖 MySQL、Redis、MinIO 三个服务，已配置 Docker Compose 一键部署：
+在项目根目录执行以下命令即可一键启动所有服务（MySQL、Redis、MinIO、后端、前端）：
 
 ```bash
-# 在项目根目录执行
-docker compose up -d
+# 配置后端环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，配置数据库密码、SECRET_KEY、邮箱等
+
+# 构建并启动所有服务
+docker compose up -d --build
+
+# 查看服务状态
+docker compose ps
+
+# 查看后端日志
+docker compose logs -f backend
 ```
 
 服务启动后：
 
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| MySQL | 3306 | 默认密码 `rftip123`，数据库 `rftip_db` |
-| Redis | 6379 | 无密码 |
-| MinIO | 9000 / 9001 | API 端口 9000，控制台 9001，默认账号 `minioadmin/minioadmin` |
+| 服务 | 容器名 | 端口 | 说明 |
+|------|--------|------|------|
+| 前端 | rftip-frontend | **8888** | 访问 `http://IP:8888` |
+| 后端 | rftip-backend | 8000 | API 文档 `http://IP:8000/docs` |
+| MySQL | rftip-mysql | 3306 | 默认密码 `rftip123`，数据库 `rftip_db` |
+| Redis | rftip-redis | 6379 | 无密码 |
+| MinIO | rftip-minio | 9000 / 9001 | 控制台 `http://IP:9001`，默认账号 `minioadmin/minioadmin` |
 
-如需自定义配置，可在项目根目录创建 `.env` 文件覆盖默认值：
+如需自定义 MySQL/MinIO 密码，在项目根目录创建 `.env` 文件覆盖默认值：
 
 ```env
 MYSQL_ROOT_PASSWORD=yourpassword
@@ -135,17 +147,35 @@ MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 ```
 
-停止服务：
+> 后端会在 MySQL、Redis、MinIO 健康检查通过后自动启动，无需手动等待。
+
+#### 常用命令
 
 ```bash
+# 停止所有服务
 docker compose down
-# 如需清除数据卷
+
+# 停止并清除数据卷（慎用，会删除数据库数据）
 docker compose down -v
+
+# 重新构建并启动某个服务（代码更新后）
+docker compose up -d --build backend
+docker compose up -d --build frontend
+
+# 重启某个服务（仅改了环境变量，未改代码）
+docker compose restart backend
+
+# 查看某个服务日志
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# 进入后端容器执行命令
+docker compose exec backend bash
 ```
 
 ---
 
-### 二、后端应用部署
+### 二、本地开发（不使用 Docker）
 
 #### 1. 环境准备
 
@@ -187,7 +217,7 @@ cp .env.example .env
 
 > **生成 SECRET_KEY**：`python -c "import secrets; print(secrets.token_hex(32))"`
 
-> 应用启动时会自动创建数据库表、MinIO 存储桶和必要目录，无需手动初始化。
+> 需要先启动依赖服务：`docker compose up -d mysql redis minio`
 
 ---
 
