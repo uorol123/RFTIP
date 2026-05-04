@@ -107,29 +107,40 @@ backend/
 
 ## 快速开始
 
-> **规划中：** 后端依赖服务（MySQL、Redis、MinIO）将通过 Docker Compose 一键部署，目前需手动启动各服务。
-
 ---
 
-### 一、依赖服务部署（手动）
+### 一、依赖服务部署（Docker Compose 一键启动）
 
-项目依赖 MySQL、Redis、MinIO 三个服务，需分别启动：
+项目依赖 MySQL、Redis、MinIO 三个服务，已配置 Docker Compose 一键部署：
 
 ```bash
-# MySQL
-docker run -d --name mysql -p 3306:3306 \
-  -e MYSQL_ROOT_PASSWORD=yourpassword \
-  -e MYSQL_DATABASE=rftip \
-  mysql:8.0
+# 在项目根目录执行
+docker compose up -d
+```
 
-# Redis
-docker run -d --name redis -p 6379:6379 redis
+服务启动后：
 
-# MinIO
-docker run -d --name minio -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio server /data --console-address ":9001"
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| MySQL | 3306 | 默认密码 `rftip123`，数据库 `rftip_db` |
+| Redis | 6379 | 无密码 |
+| MinIO | 9000 / 9001 | API 端口 9000，控制台 9001，默认账号 `minioadmin/minioadmin` |
+
+如需自定义配置，可在项目根目录创建 `.env` 文件覆盖默认值：
+
+```env
+MYSQL_ROOT_PASSWORD=yourpassword
+MYSQL_DATABASE=rftip_db
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+```
+
+停止服务：
+
+```bash
+docker compose down
+# 如需清除数据卷
+docker compose down -v
 ```
 
 ---
@@ -176,28 +187,7 @@ cp .env.example .env
 
 > **生成 SECRET_KEY**：`python -c "import secrets; print(secrets.token_hex(32))"`
 
-#### 4. 初始化服务
-
-运行初始化脚本，自动创建数据库表和 MinIO 存储桶：
-
-```bash
-python init_services.py
-```
-
-该脚本会自动：
-- 创建数据库和所有表
-- 检查 Redis 连接
-- 创建 MinIO 存储桶
-- 创建必要的目录（logs/、uploads/、exports/）
-
-#### 5. 验证配置（可选）
-
-运行测试脚本验证各服务连接：
-
-```bash
-# 测试 MySQL、Redis、MinIO 连接
-python init_services.py
-```
+> 应用启动时会自动创建数据库表、MinIO 存储桶和必要目录，无需手动初始化。
 
 ---
 
@@ -387,7 +377,7 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 配置文件位于 `.env` 文件中，在项目一级目录，仓库提供一个示例文件 `.env.example`
 
 ### 配置参考
-该项目使用了mysql，redis，minio等第三方工具，建议使用docker进行环境搭建，详见上方各服务的 Docker 部署命令。
+该项目使用了 MySQL、Redis、MinIO 等第三方服务，使用 `docker compose up -d` 即可一键启动。
 
 ### 邮箱配置说明
 根据你使用的邮箱，按以下步骤获取授权码：

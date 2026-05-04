@@ -34,13 +34,44 @@ logger.info(f"Debug mode: {settings.debug}")
 logger.info(f"Environment: {'development' if settings.debug else 'production'}")
 
 
+def _init_directories():
+    from pathlib import Path
+    base = Path(__file__).parent
+    for d in ("logs", "exports"):
+        (base / d).mkdir(parents=True, exist_ok=True)
+
+
+def _init_minio():
+    if not settings.minio_endpoint:
+        logger.info("MINIO_ENDPOINT not configured, skipping MinIO init")
+        return
+    try:
+        from minio import Minio
+
+        client = Minio(
+            settings.minio_endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=settings.minio_secure,
+        )
+        if not client.bucket_exists(settings.minio_bucket):
+            client.make_bucket(settings.minio_bucket)
+            logger.info(f"MinIO bucket '{settings.minio_bucket}' created")
+        else:
+            logger.info(f"MinIO bucket '{settings.minio_bucket}' exists")
+    except Exception as e:
+        logger.warning(f"MinIO init failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
+    _init_directories()
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created successfully")
+    _init_minio()
     yield
     # 关闭时执行
     logger.info(f"Shutting down {settings.app_name}")
