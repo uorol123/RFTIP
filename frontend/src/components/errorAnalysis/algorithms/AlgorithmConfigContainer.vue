@@ -93,8 +93,9 @@ watch(() => store.selectedAlgorithm?.name, async (algorithmName) => {
   }
 }, { immediate: true })
 
-// 监听配置变化
+// 监听配置变化（仅在实际值不同时更新，避免循环触发）
 watch(() => store.currentAlgorithmConfig, (newConfig) => {
+  if (JSON.stringify(newConfig) === JSON.stringify(localConfig.value)) return
   localConfig.value = { ...newConfig }
 }, { deep: true, immediate: true })
 

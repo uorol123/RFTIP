@@ -130,14 +130,16 @@ const updateArrayInputs = () => {
   }
 }
 
-// 初始化数组输入
+// 监听 props 变化 -> 同步到 localConfig（仅在实际值不同时更新）
 watch(() => props.modelValue, (newValue) => {
+  if (JSON.stringify(newValue) === JSON.stringify(localConfig.value)) return
   localConfig.value = { ...newValue }
   updateArrayInputs()
 }, { deep: true, immediate: true })
 
-// 监听本地配置变化
+// 监听本地配置变化 -> 仅在值与 props 不同时 emit（打破循环 watch）
 watch(localConfig, (newValue) => {
+  if (JSON.stringify(newValue) === JSON.stringify(props.modelValue)) return
   emit('update:modelValue', newValue)
 }, { deep: true })
 
