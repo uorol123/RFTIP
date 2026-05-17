@@ -8,17 +8,16 @@
           <p class="page-subtitle">查看三维雷达轨迹可视化</p>
         </div>
         <div class="header-actions">
-          <button class="btn btn-secondary">
+          <button
+            v-if="selectedFileId"
+            class="btn btn-danger"
+            :disabled="detecting"
+            @click="detectIntrusions"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
-            导入数据
-          </button>
-          <button class="btn btn-primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-            </svg>
-            处理设置
+            {{ detecting ? '检测中...' : '禁飞区入侵检测' }}
           </button>
         </div>
       </div>
@@ -44,15 +43,22 @@
           <div v-else class="viewport-content">
             <div class="viewport-header">
               <span class="viewport-file-name">{{ files.find(f => f.id === selectedFileId)?.filename }}</span>
-              <button class="btn-close-viewport" @click="selectedFileId = null">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div class="viewport-header-actions">
+                <span v-if="intrusionResults.length > 0" class="intrusion-count-badge">
+                  {{ intrusionResults.length }} 个入侵点
+                </span>
+                <button class="btn-close-viewport" @click="selectedFileId = null">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
-            <div class="viewport-canvas">
-              <p class="canvas-placeholder">3D 可视化区域</p>
-              <p class="canvas-hint">轨迹数据将在此处显示</p>
+            <div class="viewport-canvas" ref="mapContainer">
+              <template v-if="!mapReady">
+                <p class="canvas-placeholder">3D 可视化区域</p>
+                <p class="canvas-hint">轨迹数据将在此处显示</p>
+              </template>
             </div>
           </div>
         </div>
@@ -118,6 +124,19 @@
             </div>
           </div>
 
+          <div class="panel-section" v-if="intrusionResults.length > 0">
+            <h3 class="panel-title">入侵检测结果</h3>
+            <div class="intrusion-list">
+              <div v-for="(intrusion, idx) in intrusionResults" :key="idx" class="intrusion-item">
+                <span :class="['severity-dot', intrusion.severity]"></span>
+                <div class="intrusion-info">
+                  <span class="intrusion-pos">{{ intrusion.latitude.toFixed(4) }}, {{ intrusion.longitude.toFixed(4) }}</span>
+                  <span class="intrusion-alt">{{ intrusion.altitude?.toFixed(1) ?? '-' }} m</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="panel-section">
             <h3 class="panel-title">轨迹列表</h3>
             <div class="track-list">
@@ -170,10 +189,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import AppHeader from '@/components/AppHeader.vue'
 import { filesApi } from '@/api/files'
+import { zonesApi } from '@/api/zones'
 import { useAppStore } from '@/stores/app'
 import type { FileItem } from '@/api/types'
 
@@ -183,6 +205,14 @@ const appStore = useAppStore()
 const files = ref<FileItem[]>([])
 const loading = ref(false)
 const selectedFileId = ref<number | null>(null)
+const detecting = ref(false)
+const intrusionResults = ref<any[]>([])
+
+const mapContainer = ref<HTMLElement | null>(null)
+const mapReady = ref(false)
+let map: L.Map | null = null
+let intrusionMarkers: L.LayerGroup = L.layerGroup()
+let zoneOverlay: L.LayerGroup = L.layerGroup()
 
 // 加载已完成的文件列表
 const loadFiles = async () => {
@@ -192,7 +222,7 @@ const loadFiles = async () => {
       skip: 0,
       limit: 50,
       status: 'completed',
-      category: 'trajectory', // 只显示轨迹数据文件
+      category: 'trajectory',
     })
     files.value = response.files
   } catch (error: any) {
@@ -205,8 +235,107 @@ const loadFiles = async () => {
 // 选择文件进行可视化
 const selectFile = (file: FileItem) => {
   selectedFileId.value = file.id
-  // TODO: 加载该文件的轨迹数据进行可视化
+  intrusionResults.value = []
 }
+
+// 禁飞区入侵检测
+const detectIntrusions = async () => {
+  const file = files.value.find(f => f.id === selectedFileId.value)
+  if (!file) return
+
+  detecting.value = true
+  try {
+    const trackId = file.batch_id || file.file_name || String(file.id)
+    const result = await zonesApi.detectIntrusions({ track_id: trackId })
+    const intrusions = (result as any)?.intrusions || (Array.isArray(result) ? result : [])
+    intrusionResults.value = intrusions
+
+    if (intrusions.length === 0) {
+      appStore.success('未检测到禁飞区入侵')
+    } else {
+      appStore.error(`检测到 ${intrusions.length} 个入侵点`)
+      renderIntrusionMarkers(intrusions)
+    }
+  } catch (e: any) {
+    appStore.error(e?.message || '入侵检测失败')
+  } finally {
+    detecting.value = false
+  }
+}
+
+// Map initialization
+function initMap() {
+  if (!mapContainer.value || map) return
+  map = L.map(mapContainer.value, { zoomControl: false }).setView([39.9042, 116.4074], 10)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(map)
+  intrusionMarkers.addTo(map)
+  zoneOverlay.addTo(map)
+  mapReady.value = true
+}
+
+async function loadZoneOverlay() {
+  zoneOverlay.clearLayers()
+  try {
+    const res = await zonesApi.list()
+    const zones = Array.isArray(res) ? res : (res as any).items ?? []
+    for (const zone of zones) {
+      if (!zone.is_active) continue
+      try {
+        const coords = JSON.parse(zone.coordinates)
+        const style = { color: '#10b981', weight: 1, fillColor: '#10b981', fillOpacity: 0.08, dashArray: '4,4' }
+        let layer: L.Layer
+        if (zone.zone_type === 'circle' && coords.center) {
+          layer = L.circle([coords.center.lat, coords.center.lng], { ...style, radius: coords.radius })
+        } else if (zone.zone_type === 'polygon' && coords.vertices) {
+          const latlngs = coords.vertices.map((v: any) => [v.lat, v.lng] as [number, number])
+          layer = L.polygon(latlngs, style)
+        } else continue
+        ;(layer as any).bindPopup(`<strong>${zone.zone_name}</strong>`)
+        zoneOverlay.addLayer(layer)
+      } catch { /* skip */ }
+    }
+  } catch { /* ignore */ }
+}
+
+function renderIntrusionMarkers(intrusions: any[]) {
+  intrusionMarkers.clearLayers()
+  const bounds = L.latLngBounds([])
+  for (const i of intrusions) {
+    const marker = L.circleMarker([i.latitude, i.longitude], {
+      radius: 7, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, weight: 2,
+    })
+    marker.bindPopup(`
+      <strong>入侵告警</strong><br/>
+      轨迹: ${i.track_id}<br/>
+      严重程度: ${i.severity === 'high' ? '高危' : i.severity === 'medium' ? '中危' : '低危'}<br/>
+      位置: ${i.latitude.toFixed(4)}, ${i.longitude.toFixed(4)}<br/>
+      高度: ${i.altitude?.toFixed(1) ?? '-'} m
+    `)
+    intrusionMarkers.addLayer(marker)
+    bounds.extend([i.latitude, i.longitude])
+  }
+  if (bounds.isValid() && map) {
+    map.fitBounds(bounds, { padding: [50, 50] })
+  }
+}
+
+// Watch file selection to init map
+watch(selectedFileId, async (id) => {
+  if (id) {
+    await nextTick()
+    initMap()
+    await loadZoneOverlay()
+    if (map) map.invalidateSize()
+  } else {
+    map?.remove()
+    map = null
+    mapReady.value = false
+    intrusionResults.value = []
+  }
+})
 
 // 导航到数据管理页面上传文件
 const navigateToData = () => {
@@ -238,6 +367,11 @@ const formatDate = (dateStr: string): string => {
 
 onMounted(() => {
   loadFiles()
+})
+
+onUnmounted(() => {
+  map?.remove()
+  map = null
 })
 </script>
 
@@ -309,6 +443,20 @@ onMounted(() => {
 
 .btn-primary:hover {
   background: #2563eb;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn-secondary {
@@ -705,6 +853,65 @@ onMounted(() => {
 
 .canvas-hint {
   font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.viewport-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.intrusion-count-badge {
+  padding: 0.25rem 0.625rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.intrusion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.intrusion-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+}
+
+.severity-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #f59e0b;
+}
+
+.severity-dot.high { background: #ef4444; }
+.severity-dot.medium { background: #f59e0b; }
+.severity-dot.low { background: #10b981; }
+
+.intrusion-info {
+  display: flex;
+  gap: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.intrusion-pos {
+  font-family: monospace;
+}
+
+.intrusion-alt {
   color: var(--text-muted);
 }
 
