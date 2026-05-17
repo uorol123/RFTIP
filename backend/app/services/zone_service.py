@@ -272,12 +272,13 @@ def detect_intrusions(
         tracks = query.all()
 
     intrusions = []
+    # 按 zone 汇总入侵计数，用于发送单封汇总邮件
+    zone_intrusion_counts: dict[int, list] = {}
 
     for track in tracks:
         for zone in zones:
             intrusion_info = check_intrusion(track, zone)
             if intrusion_info:
-                # 检查是否已存在相同的入侵记录
                 existing = db.query(ZoneIntrusion).filter(
                     ZoneIntrusion.zone_id == intrusion_info["zone_id"],
                     ZoneIntrusion.track_id == intrusion_info["track_id"],
@@ -285,7 +286,6 @@ def detect_intrusions(
                 ).first()
 
                 if not existing:
-                    # 创建入侵记录
                     intrusion = ZoneIntrusion(
                         zone_id=intrusion_info["zone_id"],
                         track_id=intrusion_info["track_id"],
@@ -301,17 +301,86 @@ def detect_intrusions(
                     )
                     db.add(intrusion)
                     intrusions.append(intrusion)
+                    zone_intrusion_counts.setdefault(zone.id, []).append(intrusion)
 
     if intrusions:
         db.commit()
 
-        # 发送邮件通知
-        for intrusion in intrusions:
-            zone = next(z for z in zones if z.id == intrusion.zone_id)
-            if zone.notification_enabled:
-                send_intrusion_notification(db, intrusion, zone)
+        # 每个禁飞区只发一封汇总邮件
+        for zone_id, zone_intrusions in zone_intrusion_counts.items():
+            zone = next((z for z in zones if z.id == zone_id), None)
+            if zone and zone.notification_enabled:
+                send_intrusion_summary(db, zone_intrusions, zone)
 
     return intrusions
+
+
+def send_intrusion_summary(
+    db: Session,
+    intrusions: List[ZoneIntrusion],
+    zone: RestrictedZone,
+) -> bool:
+    """发送入侵预警汇总邮件（每区一封）"""
+    if not zone.notification_email or not intrusions:
+        return False
+
+    try:
+        from app.services.email_service import email_service
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from email.utils import formataddr
+
+        if not email_service.enabled:
+            return False
+
+        count = len(intrusions)
+        high_count = sum(1 for i in intrusions if i.severity == "high")
+        medium_count = sum(1 for i in intrusions if i.severity == "medium")
+        first_time = min(i.timestamp for i in intrusions).strftime('%Y-%m-%d %H:%M:%S')
+        last_time = max(i.timestamp for i in intrusions).strftime('%Y-%m-%d %H:%M:%S')
+        track_ids = sorted(set(i.track_id for i in intrusions))
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[RFTIP 禁飞区入侵预警] {zone.zone_name} - {count} 个入侵点"
+        msg["From"] = formataddr((email_service.smtp_from_name, email_service.smtp_user))
+        msg["To"] = zone.notification_email
+
+        html_content = f"""
+        <html>
+        <body>
+            <h2>禁飞区入侵预警汇总</h2>
+            <p><strong>禁飞区名称：</strong>{zone.zone_name}</p>
+            <p><strong>入侵点总数：</strong>{count}</p>
+            <p><strong>严重程度：</strong>高危 {high_count} 个，中危 {medium_count} 个</p>
+            <p><strong>入侵时间范围：</strong>{first_time} ~ {last_time}</p>
+            <p><strong>涉及轨迹：</strong>{', '.join(track_ids)}</p>
+            <p>请及时处理！</p>
+        </body>
+        </html>
+        """
+
+        msg.attach(MIMEText(html_content, "html", "utf-8"))
+
+        if email_service.smtp_port == 465:
+            with smtplib.SMTP_SSL(email_service.smtp_host, email_service.smtp_port) as server:
+                server.login(email_service.smtp_user, email_service.smtp_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(email_service.smtp_host, email_service.smtp_port) as server:
+                if email_service.use_tls:
+                    server.starttls()
+                server.login(email_service.smtp_user, email_service.smtp_password)
+                server.send_message(msg)
+
+        for intrusion in intrusions:
+            intrusion.notification_sent = 1
+        db.commit()
+
+        return True
+
+    except Exception as e:
+        print(f"发送汇总邮件失败: {e}")
+        return False
 
 
 def send_intrusion_notification(
