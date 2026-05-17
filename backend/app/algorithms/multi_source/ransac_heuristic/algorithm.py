@@ -9,6 +9,7 @@
 5. 用健康站数据计算最终系统误差
 """
 import numpy as np
+import pyproj
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 from collections import defaultdict
@@ -280,21 +281,71 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
                 healthy_stations_set.add(sid)
 
         healthy_stations_list = sorted(healthy_stations_set)
-
-        # 用全部数据计算系统误差（不剔除故障站，故障站信息仅作统计）
-        mrra_config = self._build_mrra_config()
-        error_calc = ErrorCalculator(mrra_config)
+        fault_stations = sorted(fault_stations)
 
         logger.info(f"故障站: {fault_stations}, 健康站: {healthy_stations_list}")
 
-        station_errors = error_calc.calculate_radar_errors(matched_groups, radar_positions)
+        # 计算系统误差：健康站以共识位置为基准（误差≈0），故障站以健康站共识为基准
+        geod = pyproj.Geod(ellps='WGS84')
 
+        # 累计每个站的方位角/距离/俯仰角偏差
+        az_accum = defaultdict(list)
+        range_accum = defaultdict(list)
+        elev_accum = defaultdict(list)
+
+        for group in matched_groups:
+            if len(group) < 2:
+                continue
+
+            # 分离健康站和故障站的点
+            healthy_points = [p for p in group if p["station_id"] in healthy_stations_set]
+            faulty_points = [p for p in group if p["station_id"] not in healthy_stations_set]
+
+            if len(healthy_points) < 2:
+                continue
+
+            # 健康站共识位置
+            ref_lat = np.mean([p["latitude"] for p in healthy_points])
+            ref_lon = np.mean([p["longitude"] for p in healthy_points])
+            ref_alt = np.mean([p.get("altitude", 0) or 0 for p in healthy_points])
+
+            # 所有站（含健康站和故障站）都相对于共识位置计算偏差
+            for point in group:
+                sid = point["station_id"]
+                if sid not in radar_positions:
+                    continue
+                r_lon, r_lat, r_alt = radar_positions[sid]
+                p_lat = point["latitude"]
+                p_lon = point["longitude"]
+                p_alt = point.get("altitude", 0) or 0
+
+                # 雷达站到观测点的方位角和距离
+                obs_az, _, obs_dist = geod.inv(r_lon, r_lat, p_lon, p_lat)
+                # 雷达站到共识位置的方位角和距离
+                ref_az, _, ref_dist = geod.inv(r_lon, r_lat, ref_lon, ref_lat)
+
+                az_error = obs_az - ref_az
+                range_error = obs_dist - ref_dist
+                # 俯仰角偏差：基于高度差和距离
+                if ref_dist > 0:
+                    obs_elev = np.degrees(np.arctan2(p_alt - r_alt, obs_dist))
+                    ref_elev = np.degrees(np.arctan2(ref_alt - r_alt, ref_dist))
+                    elev_error = obs_elev - ref_elev
+                else:
+                    elev_error = 0.0
+
+                az_accum[sid].append(az_error)
+                range_accum[sid].append(range_error)
+                elev_accum[sid].append(elev_error)
+
+        # 取平均作为系统误差
         errors = {}
-        for sid, (az_err, range_err, elev_err) in station_errors.items():
+        all_sids = set(healthy_stations_set) | set(fault_stations)
+        for sid in all_sids:
             errors[sid] = {
-                "azimuth_error": az_err,
-                "range_error": range_err,
-                "elevation_error": elev_err,
+                "azimuth_error": float(np.mean(az_accum[sid])) if az_accum[sid] else 0.0,
+                "range_error": float(np.mean(range_accum[sid])) if range_accum[sid] else 0.0,
+                "elevation_error": float(np.mean(elev_accum[sid])) if elev_accum[sid] else 0.0,
             }
 
         return {
