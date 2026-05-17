@@ -234,9 +234,6 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
         station_total = defaultdict(int)
         station_outlier_count = defaultdict(int)
 
-        # 健康站的所有匹配组数据
-        healthy_groups = []
-
         for group in matched_groups:
             if len(group) < 2:
                 continue
@@ -261,25 +258,18 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
             station_deviations.sort(key=lambda x: x[1])
 
             # 检测差值突变点
-            healthy_stations_in_group, faulty_stations_in_group = self._detect_jump_point(
+            _, faulty_stations_in_group = self._detect_jump_point(
                 station_deviations
             )
 
             # 统计故障站
-            for sid in faulty_stations_in_group:
+            for sid, _ in faulty_stations_in_group:
                 station_outlier_count[sid] += 1
 
-            # 收集健康站的数据
-            healthy_sids = set(sid for sid, _ in healthy_stations_in_group)
-            if healthy_sids:
-                healthy_group = [p for p in group if p["station_id"] in healthy_sids]
-                if len(healthy_group) >= 2:
-                    healthy_groups.append(healthy_group)
-
-        # 计算离群率
+        # 计算离群率，确定全局故障站和健康站
         outlier_rates = {}
         fault_stations = []
-        healthy_stations_list = []
+        healthy_stations_set = set()
 
         for sid in station_total:
             rate = station_outlier_count[sid] / station_total[sid]
@@ -287,17 +277,28 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
             if rate >= self.config.outlier_ratio_threshold:
                 fault_stations.append(sid)
             else:
-                healthy_stations_list.append(sid)
+                healthy_stations_set.add(sid)
 
-        # 用健康站数据计算系统误差
+        healthy_stations_list = sorted(healthy_stations_set)
+
+        # 从 matched_groups 中移除故障站的点（保留完整 group 结构）
+        filtered_groups = []
+        for group in matched_groups:
+            filtered_group = [p for p in group if p["station_id"] in healthy_stations_set]
+            if len(filtered_group) >= 2:
+                filtered_groups.append(filtered_group)
+
+        # 用过滤后的完整数据计算系统误差
         mrra_config = self._build_mrra_config()
         error_calc = ErrorCalculator(mrra_config)
 
-        # 如果有足够的健康组，用健康数据计算误差
-        if healthy_groups:
-            station_errors = error_calc.calculate_radar_errors(healthy_groups, radar_positions)
+        data_to_use = filtered_groups if filtered_groups else matched_groups
+        logger.info(f"故障站: {fault_stations}, 健康站: {healthy_stations_list}")
+        logger.info(f"过滤后匹配组: {len(data_to_use)}, 原始匹配组: {len(matched_groups)}")
+
+        if data_to_use:
+            station_errors = error_calc.calculate_radar_errors(data_to_use, radar_positions)
         else:
-            # 兜底：用所有数据计算误差
             station_errors = error_calc.calculate_radar_errors(matched_groups, radar_positions)
 
         errors = {}
