@@ -64,6 +64,12 @@ class RawTrackResponse(TrackPointBase):
     class Config:
         from_attributes = True
 
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        if hasattr(obj, 'batch_id') and not hasattr(obj, 'track_id'):
+            obj.track_id = obj.batch_id
+        return super().model_validate(obj, **kwargs)
+
 
 class CorrectedTrackPoint(TrackPointBase):
     """修正轨迹点模型"""
@@ -84,6 +90,12 @@ class CorrectedTrackResponse(TrackPointBase):
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        if hasattr(obj, 'batch_id') and not hasattr(obj, 'track_id'):
+            obj.track_id = obj.batch_id
+        return super().model_validate(obj, **kwargs)
 
 
 class TrackProcessRequest(BaseModel):
