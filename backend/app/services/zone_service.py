@@ -313,17 +313,25 @@ def send_intrusion_notification(
     zone: RestrictedZone,
 ) -> bool:
     """发送入侵预警邮件"""
-    if not zone.notification_email or not settings.smtp_host:
+    if not zone.notification_email:
         return False
 
     try:
-        # 创建邮件
+        from app.services.email_service import email_service
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from email.utils import formataddr
+
+        if not email_service.enabled:
+            return False
+
+        severity_text = {"high": "高危", "medium": "中危", "low": "低危"}.get(intrusion.severity, intrusion.severity)
+
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"[RFTIP 禁飞区入侵预警] {zone.zone_name}"
-        msg["From"] = settings.smtp_user
+        msg["From"] = formataddr((email_service.smtp_from_name, email_service.smtp_user))
         msg["To"] = zone.notification_email
 
-        # 邮件内容
         html_content = f"""
         <html>
         <body>
@@ -333,23 +341,27 @@ def send_intrusion_notification(
             <p><strong>轨迹编号：</strong>{intrusion.track_id}</p>
             <p><strong>入侵位置：</strong>({intrusion.latitude:.6f}, {intrusion.longitude:.6f})</p>
             <p><strong>高度：</strong>{intrusion.altitude:.1f} 米</p>
-            <p><strong>严重程度：</strong>{intrusion.severity}</p>
+            <p><strong>严重程度：</strong>{severity_text}</p>
             <p><strong>距离边界：</strong>{abs(intrusion.distance_from_boundary):.1f} 米</p>
             <p>请及时处理！</p>
         </body>
         </html>
         """
 
-        msg.attach(MIMEText(html_content, "html"))
+        msg.attach(MIMEText(html_content, "html", "utf-8"))
 
-        # 发送邮件
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
-            if settings.smtp_user and settings.smtp_password:
-                server.login(settings.smtp_user, settings.smtp_password)
-            server.send_message(msg)
+        # 复用 EmailService 相同的发送逻辑
+        if email_service.smtp_port == 465:
+            with smtplib.SMTP_SSL(email_service.smtp_host, email_service.smtp_port) as server:
+                server.login(email_service.smtp_user, email_service.smtp_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(email_service.smtp_host, email_service.smtp_port) as server:
+                if email_service.use_tls:
+                    server.starttls()
+                server.login(email_service.smtp_user, email_service.smtp_password)
+                server.send_message(msg)
 
-        # 更新通知状态
         intrusion.notification_sent = 1
         db.commit()
 
