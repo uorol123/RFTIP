@@ -282,11 +282,17 @@ class ErrorAnalysisService:
         user_id: Optional[int] = None,
         limit: int = 20,
         offset: int = 0,
+        status: Optional[str] = None,
+        algorithm_names: Optional[List[str]] = None,
     ) -> Tuple[List[ErrorAnalysisTaskResponse], int]:
         query = self.db.query(ErrorAnalysisTask)
 
         if user_id is not None:
             query = query.filter(ErrorAnalysisTask.user_id == user_id)
+        if status is not None:
+            query = query.filter(ErrorAnalysisTask.status == status)
+        if algorithm_names:
+            query = query.filter(ErrorAnalysisTask.algorithm_name.in_(algorithm_names))
 
         total = query.count()
         tasks = query.order_by(ErrorAnalysisTask.created_at.desc()).offset(offset).limit(limit).all()

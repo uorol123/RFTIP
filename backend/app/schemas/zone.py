@@ -62,8 +62,9 @@ class RestrictedZoneResponse(RestrictedZoneBase):
     def coordinates_array(self) -> list[list[float]]:
         """将 JSON 字符串转换为坐标数组"""
         try:
-            # 使用 BaseModel 的方式获取原始 coordinates 值
-            coords_str = RestrictedZoneBase.model_dump(self)["coordinates"]
+            coords_str = self.__pydantic_extra__.get("coordinates") if hasattr(self, "__pydantic_extra__") else None
+            if coords_str is None:
+                coords_str = object.__getattribute__(self, "coordinates")
             coords = json.loads(coords_str)
             if coords.get("type") == "circle":
                 center = coords.get("center", {})
