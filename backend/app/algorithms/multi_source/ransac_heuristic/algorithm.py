@@ -281,25 +281,13 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
 
         healthy_stations_list = sorted(healthy_stations_set)
 
-        # 从 matched_groups 中移除故障站的点（保留完整 group 结构）
-        filtered_groups = []
-        for group in matched_groups:
-            filtered_group = [p for p in group if p["station_id"] in healthy_stations_set]
-            if len(filtered_group) >= 2:
-                filtered_groups.append(filtered_group)
-
-        # 用过滤后的完整数据计算系统误差
+        # 用全部数据计算系统误差（不剔除故障站，故障站信息仅作统计）
         mrra_config = self._build_mrra_config()
         error_calc = ErrorCalculator(mrra_config)
 
-        data_to_use = filtered_groups if filtered_groups else matched_groups
         logger.info(f"故障站: {fault_stations}, 健康站: {healthy_stations_list}")
-        logger.info(f"过滤后匹配组: {len(data_to_use)}, 原始匹配组: {len(matched_groups)}")
 
-        if data_to_use:
-            station_errors = error_calc.calculate_radar_errors(data_to_use, radar_positions)
-        else:
-            station_errors = error_calc.calculate_radar_errors(matched_groups, radar_positions)
+        station_errors = error_calc.calculate_radar_errors(matched_groups, radar_positions)
 
         errors = {}
         for sid, (az_err, range_err, elev_err) in station_errors.items():
