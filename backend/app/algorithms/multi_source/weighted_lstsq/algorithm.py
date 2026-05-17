@@ -340,18 +340,14 @@ class WeightedLstsqAlgorithm(BaseErrorAnalysisAlgorithm):
         mrra_config = self._build_mrra_config()
         error_calc = ErrorCalculator(mrra_config)
 
-        opt_az, opt_r, opt_elev = error_calc.optimize_station_errors_separately(
-            filtered_groups,
-            {sid: 0.0 for sid in radar_positions},
-            radar_positions,
-        )
+        station_errors = error_calc.calculate_radar_errors(filtered_groups, radar_positions)
 
         errors = {}
-        for sid in radar_positions:
+        for sid, (az_err, range_err, elev_err) in station_errors.items():
             errors[sid] = {
-                "azimuth_error": opt_az.get(sid, 0.0),
-                "range_error": opt_r.get(sid, 0.0),
-                "elevation_error": opt_elev.get(sid, 0.0),
+                "azimuth_error": az_err,
+                "range_error": range_err,
+                "elevation_error": elev_err,
             }
 
         return {
