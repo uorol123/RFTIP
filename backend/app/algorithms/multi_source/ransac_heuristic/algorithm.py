@@ -285,10 +285,25 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
 
         logger.info(f"故障站: {fault_stations}, 健康站: {healthy_stations_list}")
 
-        # 计算系统误差：健康站以共识位置为基准（误差≈0），故障站以健康站共识为基准
+        # 健康站误差设为 0
+        errors = {}
+        for sid in healthy_stations_list:
+            errors[sid] = {"azimuth_error": 0.0, "range_error": 0.0, "elevation_error": 0.0}
+
+        if not fault_stations:
+            # 没有故障站，全部为 0
+            for sid in healthy_stations_list:
+                errors[sid] = {"azimuth_error": 0.0, "range_error": 0.0, "elevation_error": 0.0}
+            return {
+                "errors": errors,
+                "outlier_rates": outlier_rates,
+                "fault_stations": fault_stations,
+                "healthy_stations": healthy_stations_list,
+            }
+
+        # 计算故障站误差：以健康站共识位置为基准
         geod = pyproj.Geod(ellps='WGS84')
 
-        # 累计每个站的方位角/距离/俯仰角偏差
         az_accum = defaultdict(list)
         range_accum = defaultdict(list)
         elev_accum = defaultdict(list)
@@ -297,20 +312,18 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
             if len(group) < 2:
                 continue
 
-            # 分离健康站和故障站的点
             healthy_points = [p for p in group if p["station_id"] in healthy_stations_set]
-            faulty_points = [p for p in group if p["station_id"] not in healthy_stations_set]
+            faulty_points = [p for p in group if p["station_id"] in set(fault_stations)]
 
-            if len(healthy_points) < 2:
+            if len(healthy_points) < 2 or not faulty_points:
                 continue
 
-            # 健康站共识位置
+            # 健康站共识位置（基准）
             ref_lat = np.mean([p["latitude"] for p in healthy_points])
             ref_lon = np.mean([p["longitude"] for p in healthy_points])
             ref_alt = np.mean([p.get("altitude", 0) or 0 for p in healthy_points])
 
-            # 所有站（含健康站和故障站）都相对于共识位置计算偏差
-            for point in group:
+            for point in faulty_points:
                 sid = point["station_id"]
                 if sid not in radar_positions:
                     continue
@@ -319,29 +332,27 @@ class RansacHeuristicAlgorithm(BaseErrorAnalysisAlgorithm):
                 p_lon = point["longitude"]
                 p_alt = point.get("altitude", 0) or 0
 
-                # 雷达站到观测点的方位角和距离
+                # 雷达站到观测点
                 obs_az, _, obs_dist = geod.inv(r_lon, r_lat, p_lon, p_lat)
-                # 雷达站到共识位置的方位角和距离
+                # 雷达站到共识位置
                 ref_az, _, ref_dist = geod.inv(r_lon, r_lat, ref_lon, ref_lat)
 
-                az_error = obs_az - ref_az
-                range_error = obs_dist - ref_dist
-                # 俯仰角偏差：基于高度差和距离
+                # 方位角差值处理 360° 跨越
+                az_diff = obs_az - ref_az
+                if az_diff > 180:
+                    az_diff -= 360
+                elif az_diff < -180:
+                    az_diff += 360
+
+                az_accum[sid].append(az_diff)
+                range_accum[sid].append(obs_dist - ref_dist)
+
                 if ref_dist > 0:
                     obs_elev = np.degrees(np.arctan2(p_alt - r_alt, obs_dist))
                     ref_elev = np.degrees(np.arctan2(ref_alt - r_alt, ref_dist))
-                    elev_error = obs_elev - ref_elev
-                else:
-                    elev_error = 0.0
+                    elev_accum[sid].append(obs_elev - ref_elev)
 
-                az_accum[sid].append(az_error)
-                range_accum[sid].append(range_error)
-                elev_accum[sid].append(elev_error)
-
-        # 取平均作为系统误差
-        errors = {}
-        all_sids = set(healthy_stations_set) | set(fault_stations)
-        for sid in all_sids:
+        for sid in fault_stations:
             errors[sid] = {
                 "azimuth_error": float(np.mean(az_accum[sid])) if az_accum[sid] else 0.0,
                 "range_error": float(np.mean(range_accum[sid])) if range_accum[sid] else 0.0,
