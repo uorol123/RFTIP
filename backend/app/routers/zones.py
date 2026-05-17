@@ -120,6 +120,36 @@ async def delete_zone(
     return None
 
 
+@router.post("/detect-intrusions/file/{file_id}", response_model=list[ZoneIntrusionResponse])
+async def detect_intrusions_by_file(
+    file_id: int,
+    current_user: Annotated[UserResponse, Depends(get_current_active_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    按文件检测禁飞区入侵
+
+    从该文件的所有轨迹中检测禁飞区入侵，自动发送预警邮件
+    """
+    from app.models.flight_track import FlightTrackRaw
+
+    # 获取该文件所有不同的 batch_id
+    batch_ids = db.query(FlightTrackRaw.batch_id).filter(
+        FlightTrackRaw.file_id == file_id
+    ).distinct().all()
+    batch_ids = [b[0] for b in batch_ids]
+
+    if not batch_ids:
+        raise HTTPException(status_code=404, detail="该文件无轨迹数据")
+
+    all_intrusions = []
+    for batch_id in batch_ids:
+        intrusions = zone_service.detect_intrusions(db, batch_id)
+        all_intrusions.extend(intrusions)
+
+    return [ZoneIntrusionResponse.model_validate(i) for i in all_intrusions]
+
+
 @router.post("/detect-intrusions", response_model=list[ZoneIntrusionResponse])
 async def detect_intrusions(
     track_id: str,

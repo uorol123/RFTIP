@@ -57,6 +57,12 @@ export async function detectIntrusions(params?: {
   )
 }
 
+export async function detectIntrusionsByFile(fileId: number): Promise<any[]> {
+  return apiCall(() =>
+    apiClient.post<any[]>(`/zones/detect-intrusions/file/${fileId}`)
+  )
+}
+
 export async function getIntrusions(params?: PaginationParams & {
   zone_id?: number
   track_id?: string
@@ -80,8 +86,9 @@ export const zonesApi = {
   list,
   get,
   update,
-  delete: deleteZone, // 避免与关键字冲突
+  delete: deleteZone,
   detectIntrusions,
+  detectIntrusionsByFile,
   getIntrusions,
   toggleActive,
 }

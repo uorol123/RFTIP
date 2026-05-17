@@ -85,21 +85,32 @@ async def list_analysis_tasks(
     current_user: Annotated[UserResponse, Depends(get_current_active_user)],
     db: Annotated[Session, Depends(get_db)],
     page: Annotated[int, Query(ge=1, description="页码")] = 1,
-    limit: Annotated[int, Query(ge=1, le=100, description="每页数量")] = 20
+    limit: Annotated[int, Query(ge=1, le=100, description="每页数量")] = 20,
+    status: Annotated[Optional[str], Query(description="任务状态过滤")] = None,
+    algorithm_name: Annotated[Optional[str], Query(description="算法名称过滤（逗号分隔）")] = None,
 ):
     """
     获取误差分析任务列表
 
     - **page**: 页码（从1开始）
     - **limit**: 每页数量（1-100）
+    - **status**: 按状态过滤（如 completed）
+    - **algorithm_name**: 按算法名称过滤，多个用逗号分隔（如 kalman,particle_filter,spline）
     """
     try:
         service = ErrorAnalysisService(db)
         offset = (page - 1) * limit
+
+        algorithm_names = None
+        if algorithm_name:
+            algorithm_names = [n.strip() for n in algorithm_name.split(',') if n.strip()]
+
         tasks, total = service.list_tasks(
             user_id=current_user.id,
             limit=limit,
-            offset=offset
+            offset=offset,
+            status=status,
+            algorithm_names=algorithm_names,
         )
 
         return TaskListResponse(
