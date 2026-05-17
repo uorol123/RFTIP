@@ -11,7 +11,7 @@
         <div class="profile-header">
           <div class="avatar-section">
             <div class="avatar">
-              <img v-if="user?.avatar" :src="user.avatar" :alt="user.username" />
+              <img v-if="user?.avatar_url || user?.avatar" :src="`/api/auth/avatar/${user.id}`" :alt="user.username" />
               <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path
                   stroke-linecap="round"
@@ -324,19 +324,29 @@ const handleAvatarUpload = async (event: Event) => {
 
   // Validate file type
   if (!file.type.startsWith('image/')) {
-    appStore.error('Please select an image file')
+    appStore.error('请选择图片文件')
     return
   }
 
   // Validate file size (max 5MB)
   if (file.size > 5 * 1024 * 1024) {
-    appStore.error('Image must be smaller than 5MB')
+    appStore.error('图片大小不能超过 5MB')
     return
   }
 
-  // In a real implementation, you would upload to a server
-  // For now, just show a success message
-  appStore.success('Avatar uploaded (demo mode)')
+  try {
+    await authApi.uploadAvatar(file)
+    appStore.success('头像更换成功')
+    // 重新获取用户信息以刷新头像
+    const updatedUser = await authApi.getProfile()
+    authStore.setUser(updatedUser)
+    authStore.saveUserToStorage()
+  } catch (e: any) {
+    appStore.error(e?.message || '头像上传失败')
+  } finally {
+    // 清空 input 以便再次选择同一文件
+    target.value = ''
+  }
 }
 
 const formatDate = (dateString?: string): string => {

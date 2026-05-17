@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from core.config import get_settings, REDIS_URL
 from core.database import get_db
 from core.logging import get_logger
+from app.models.user import User
 from app.schemas.auth import (
     UserCreate,
     UserResponse,
@@ -476,6 +477,12 @@ async def upload_avatar(
             filename=avatar.filename or "avatar.jpg",
             user_id=current_user.id,
         )
+
+        # 更新用户头像 URL
+        user = db.query(User).filter(User.id == current_user.id).first()
+        if user:
+            user.avatar_url = avatar_id
+            db.commit()
 
         return AvatarUploadResponse(
             avatar_id=avatar_id,
