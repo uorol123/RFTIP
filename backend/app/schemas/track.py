@@ -54,6 +54,7 @@ class RawTrackResponse(TrackPointBase):
     """原始轨迹响应模型"""
     id: int
     file_id: int
+    station_id: Optional[str] = None
     radar_station_id: Optional[int] = None
     target_id: Optional[str] = None
     radar_cross_section: Optional[float] = None
