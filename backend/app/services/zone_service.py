@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from core.config import get_settings
 from app.models.restricted_zone import RestrictedZone, ZoneIntrusion
-from app.models.flight_track import FlightTrackCorrected
+from app.models.flight_track import FlightTrackCorrected, FlightTrackRaw
 from app.schemas.zone import RestrictedZoneCreate, RestrictedZoneUpdate
 
 settings = get_settings()
@@ -255,14 +255,21 @@ def detect_intrusions(
     # 获取激活的禁飞区
     zones = get_active_zones(db)
 
-    # 获取修正后的轨迹数据
+    # 获取轨迹数据：优先修正后，无数据则回退原始
     query = db.query(FlightTrackCorrected).filter(FlightTrackCorrected.batch_id == track_id)
     if start_time:
         query = query.filter(FlightTrackCorrected.timestamp >= start_time)
     if end_time:
         query = query.filter(FlightTrackCorrected.timestamp <= end_time)
-
     tracks = query.all()
+
+    if not tracks:
+        query = db.query(FlightTrackRaw).filter(FlightTrackRaw.batch_id == track_id)
+        if start_time:
+            query = query.filter(FlightTrackRaw.timestamp >= start_time)
+        if end_time:
+            query = query.filter(FlightTrackRaw.timestamp <= end_time)
+        tracks = query.all()
 
     intrusions = []
 
@@ -289,7 +296,7 @@ def detect_intrusions(
                         intrusion_type=intrusion_info["intrusion_type"],
                         severity="high" if abs(intrusion_info["distance_from_boundary"]) > 100 else "medium",
                         distance_from_boundary=intrusion_info["distance_from_boundary"],
-                        target_info=json.dumps({"confidence_score": track.confidence_score}),
+                        target_info=json.dumps({"confidence_score": getattr(track, 'confidence_score', None)}),
                         notification_sent=0,
                     )
                     db.add(intrusion)
