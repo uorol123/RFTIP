@@ -50,7 +50,7 @@
                 <span v-if="intrusionResults.length > 0" class="intrusion-count-badge">
                   {{ intrusionResults.length }} 个入侵点
                 </span>
-                <button class="btn-close-viewport" @click="selectedFileId = null">
+                <button class="btn-close-viewport" @click="clearSelection">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -63,10 +63,11 @@
 
         <!-- 右侧控制面板 -->
         <div class="control-panel">
+          <!-- 数据文件选择 -->
           <div class="panel-section">
             <h3 class="panel-title">数据文件</h3>
             <div class="file-list">
-              <div v-if="loading" class="file-list-loading">
+              <div v-if="loadingFiles" class="file-list-loading">
                 <svg class="spinner" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="32" stroke-linecap="round" />
                 </svg>
@@ -104,17 +105,50 @@
             </div>
           </div>
 
+          <!-- 雷达站筛选 -->
+          <div v-if="stationList.length > 0" class="panel-section">
+            <h3 class="panel-title">雷达站筛选</h3>
+            <div class="station-filters">
+              <div
+                class="station-chip"
+                :class="{ active: activeStations.size === 0 }"
+                @click="activeStations.clear(); rerender()"
+              >
+                全部
+              </div>
+              <div
+                v-for="station in stationList"
+                :key="station.id"
+                class="station-chip"
+                :class="{ active: activeStations.has(station.id) }"
+                @click="toggleStation(station.id)"
+              >
+                <span class="station-color" :style="{ background: station.color }"></span>
+                {{ station.id }}
+                <span class="station-count">{{ station.pointCount }}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- 轨迹统计 -->
           <div v-if="trackStats" class="panel-section">
-            <h3 class="panel-title">轨迹信息</h3>
+            <h3 class="panel-title">统计信息</h3>
             <div class="stats-grid">
               <div class="stat-item">
-                <span class="stat-label">轨迹点数</span>
-                <span class="stat-value">{{ trackStats.pointCount }}</span>
+                <span class="stat-label">显示点数</span>
+                <span class="stat-value">{{ trackStats.visiblePoints }}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">轨迹条数</span>
+                <span class="stat-label">雷达站</span>
+                <span class="stat-value">{{ trackStats.stationCount }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">轨迹编号</span>
                 <span class="stat-value">{{ trackStats.trackCount }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">总点数</span>
+                <span class="stat-value">{{ trackStats.totalPoints }}</span>
               </div>
             </div>
           </div>
@@ -139,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import AppHeader from '@/components/AppHeader.vue'
@@ -150,29 +184,45 @@ import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
 
-const loading = ref(false)
+const loadingFiles = ref(false)
 const files = ref<any[]>([])
 const selectedFileId = ref<number | null>(null)
 const detecting = ref(false)
 const intrusionResults = ref<any[]>([])
-const trackStats = ref<{ pointCount: number; trackCount: number } | null>(null)
+
+interface StationInfo { id: string; color: string; pointCount: number }
+const stationList = ref<StationInfo[]>([])
+const activeStations = reactive(new Set<string>())
+
+const trackStats = ref<{
+  totalPoints: number; visiblePoints: number
+  stationCount: number; trackCount: number
+} | null>(null)
 
 const mapContainer = ref<HTMLElement | null>(null)
 let map: L.Map | null = null
-let trackLayer = L.polyline([], { color: '#3b82f6', weight: 2 })
+let trackLayerGroup = L.layerGroup()
 let zoneOverlay = L.layerGroup()
 let intrusionMarkers = L.layerGroup()
 
+// Raw track data cache
+let allTracks: any[] = []
+
+const PALETTE = [
+  '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+]
+
 // --- Load files ---
 async function loadFiles() {
-  loading.value = true
+  loadingFiles.value = true
   try {
-    const res = await filesApi.getFileList({ skip: 0, limit: 100, status: 'completed', category: 'trajectory' })
-    files.value = res.files || []
+    const res = await filesApi.getFileList({ skip: 0, limit: 100 })
+    files.value = (res.files || []).filter((f: any) => f.status === 'completed')
   } catch {
     files.value = []
   } finally {
-    loading.value = false
+    loadingFiles.value = false
   }
 }
 
@@ -180,21 +230,54 @@ async function loadFiles() {
 async function selectFile(file: any) {
   selectedFileId.value = file.id
   intrusionResults.value = []
-  trackStats.value = null
+  allTracks = []
+  stationList.value = []
+  activeStations.clear()
 
   try {
     const tracks = await tracksApi.getRaw({ file_id: file.id, limit: 10000 })
-    const points = (tracks || []).map((t: any) => [t.latitude, t.longitude] as [number, number])
+    allTracks = tracks || []
 
-    // Count unique track_ids (batch_id)
-    const trackIds = new Set((tracks || []).map((t: any) => t.track_id))
-    trackStats.value = { pointCount: points.length, trackCount: trackIds.size }
+    // Group by station_id
+    const stationMap = new Map<string, { points: any[]; color: string }>()
+    for (const t of allTracks) {
+      const sid = t.station_id || t.radar_station_id || 'unknown'
+      if (!stationMap.has(sid)) {
+        stationMap.set(sid, { points: [], color: PALETTE[stationMap.size % PALETTE.length] })
+      }
+      stationMap.get(sid)!.points.push(t)
+    }
+
+    stationList.value = Array.from(stationMap.entries()).map(([id, v]) => ({
+      id, color: v.color, pointCount: v.points.length,
+    }))
+
+    const trackIds = new Set(allTracks.map(t => t.track_id))
+    trackStats.value = {
+      totalPoints: allTracks.length,
+      visiblePoints: allTracks.length,
+      stationCount: stationMap.size,
+      trackCount: trackIds.size,
+    }
 
     await nextTick()
-    renderTracks(points)
+    renderTracks()
   } catch (e: any) {
     appStore.error(e?.message || '加载轨迹数据失败')
   }
+}
+
+function toggleStation(stationId: string) {
+  if (activeStations.has(stationId)) {
+    activeStations.delete(stationId)
+  } else {
+    activeStations.add(stationId)
+  }
+  rerender()
+}
+
+function rerender() {
+  renderTracks()
 }
 
 // --- Map ---
@@ -205,25 +288,78 @@ function initMap() {
     attribution: '&copy; OpenStreetMap',
     maxZoom: 19,
   }).addTo(map)
-  trackLayer.addTo(map)
+  trackLayerGroup.addTo(map)
   zoneOverlay.addTo(map)
   intrusionMarkers.addTo(map)
 }
 
-function renderTracks(points: [number, number][]) {
+function renderTracks() {
   if (!map) { initMap(); if (!map) return }
 
+  trackLayerGroup.clearLayers()
   intrusionMarkers.clearLayers()
-  zoneOverlay.clearLayers()
-  trackLayer.setLatLngs(points)
 
-  if (points.length > 0) {
-    L.circleMarker(points[0], { radius: 5, color: '#10b981', fillColor: '#10b981', fillOpacity: 1 })
-      .bindPopup('起点').addTo(map!)
-    L.circleMarker(points[points.length - 1], { radius: 5, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1 })
-      .bindPopup('终点').addTo(map!)
+  const stationMap = new Map<string, { points: any[]; color: string }>()
+  for (const t of allTracks) {
+    const sid = t.station_id || t.radar_station_id || 'unknown'
+    if (!stationMap.has(sid)) {
+      const info = stationList.value.find(s => s.id === sid)
+      stationMap.set(sid, { points: [], color: info?.color || '#3b82f6' })
+    }
+    stationMap.get(sid)!.points.push(t)
+  }
 
-    map.fitBounds(L.latLngBounds(points), { padding: [40, 40] })
+  const allVisiblePoints: [number, number][] = []
+
+  for (const [sid, { points, color }] of stationMap) {
+    // Filter by active stations
+    if (activeStations.size > 0 && !activeStations.has(sid)) continue
+
+    const sorted = [...points].sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
+    const latlngs: [number, number][] = sorted.map(t => [t.latitude, t.longitude])
+
+    if (latlngs.length === 0) continue
+    allVisiblePoints.push(...latlngs)
+
+    // Polyline
+    const line = L.polyline(latlngs, { color, weight: 2.5, opacity: 0.85 })
+    line.bindPopup(`<strong>雷达站 ${sid}</strong><br/>${points.length} 个轨迹点`)
+    trackLayerGroup.addLayer(line)
+
+    // Points (circle markers) — sample when too many
+    const step = Math.max(1, Math.floor(latlngs.length / 500))
+    for (let i = 0; i < latlngs.length; i += step) {
+      const marker = L.circleMarker(latlngs[i], {
+        radius: 3, color, fillColor: color, fillOpacity: 0.7, weight: 1,
+      })
+      const t = sorted[i]
+      marker.bindPopup(
+        `<strong>雷达站 ${sid}</strong><br/>` +
+        `时间: ${new Date(t.timestamp).toLocaleString()}<br/>` +
+        `位置: ${t.latitude.toFixed(4)}, ${t.longitude.toFixed(4)}<br/>` +
+        `高度: ${t.altitude?.toFixed(1) ?? '-'} m`
+      )
+      trackLayerGroup.addLayer(marker)
+    }
+
+    // Start/end markers
+    L.circleMarker(latlngs[0], {
+      radius: 6, color: '#10b981', fillColor: '#10b981', fillOpacity: 1, weight: 2,
+    }).bindPopup(`<strong>${sid} 起点</strong>`).addTo(trackLayerGroup)
+    L.circleMarker(latlngs[latlngs.length - 1], {
+      radius: 6, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1, weight: 2,
+    }).bindPopup(`<strong>${sid} 终点</strong>`).addTo(trackLayerGroup)
+  }
+
+  // Update visible stats
+  if (trackStats.value) {
+    trackStats.value.visiblePoints = allVisiblePoints.length
+  }
+
+  if (allVisiblePoints.length > 0) {
+    map.fitBounds(L.latLngBounds(allVisiblePoints), { padding: [40, 40] })
   }
 
   loadZoneOverlay()
@@ -253,7 +389,7 @@ async function loadZoneOverlay() {
   } catch { /* ignore */ }
 }
 
-// --- Intrusion detection by file ---
+// --- Intrusion detection ---
 async function runIntrusionDetection() {
   if (!selectedFileId.value) return
   detecting.value = true
@@ -291,13 +427,19 @@ function renderIntrusionMarkers(intrusions: any[]) {
   }
 }
 
-watch(selectedFileId, (val) => {
-  if (!val && map) {
-    trackLayer.setLatLngs([])
+function clearSelection() {
+  selectedFileId.value = null
+  allTracks = []
+  stationList.value = []
+  activeStations.clear()
+  trackStats.value = null
+  intrusionResults.value = []
+  if (map) {
+    trackLayerGroup.clearLayers()
     intrusionMarkers.clearLayers()
     zoneOverlay.clearLayers()
   }
-})
+}
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '-'
@@ -357,7 +499,7 @@ onUnmounted(() => { map?.remove(); map = null })
 .panel-section:last-child { border-bottom: none; padding-bottom: 0; }
 .panel-title { margin: 0 0 0.75rem; font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
 
-.file-list { max-height: 280px; overflow-y: auto; }
+.file-list { max-height: 220px; overflow-y: auto; }
 .file-list-loading, .file-list-empty { display: flex; flex-direction: column; align-items: center; padding: 2rem 1rem; text-align: center; color: var(--text-muted); }
 .file-list-empty svg { width: 2rem; height: 2rem; margin-bottom: 0.5rem; opacity: 0.5; }
 .file-list-empty p { margin: 0; font-size: 0.8125rem; }
@@ -376,6 +518,19 @@ onUnmounted(() => { map?.remove(); map = null })
 .file-item-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.125rem; }
 .file-item-rows { font-size: 0.75rem; color: var(--color-primary); }
 .file-item-date { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+
+.station-filters { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.station-chip {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.3rem 0.625rem; border-radius: 1rem; font-size: 0.75rem;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  cursor: pointer; transition: all 0.15s; border: 1px solid transparent;
+  user-select: none;
+}
+.station-chip:hover { background: var(--bg-primary); border-color: var(--border-color); }
+.station-chip.active { background: var(--bg-primary); border-color: var(--color-primary); color: var(--text-primary); font-weight: 500; }
+.station-color { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; }
+.station-count { font-size: 0.625rem; color: var(--text-muted); }
 
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .stat-item { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 0.375rem; }
