@@ -1,4 +1,4 @@
-# 智能雷达轨迹分析平台
+# 智能轨迹分析平台
 
 **RadarFusionTrack Intelligence Platform (RFTIP)**
 
